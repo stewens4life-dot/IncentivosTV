@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Volume2, Clock, CheckCircle, Shield, Key } from 'lucide-react';
+import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Volume2, Clock, CheckCircle, Shield, Key, Pencil, X } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, deleteField, setDoc } from 'firebase/firestore';
@@ -27,7 +27,6 @@ const firebaseConfig = {
 };
 
 // --- Contraseña Maestra (Respaldo del .env) ---
-// Si no hay nada en la DB, se usa esta. Si no hay esta, nadie entra.
 const ENV_PASSWORD = getEnv("VITE_ADMIN_PASSWORD");
 
 // Inicialización condicional
@@ -112,7 +111,6 @@ export default function App() {
     });
 
     // Sync Contraseña (Settings)
-    // Guardamos la configuración en 'artifacts/{appId}/public/data/settings/auth'
     const authDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'auth');
     const unsubSettings = onSnapshot(authDocRef, (docSnap) => {
         if (docSnap.exists()) {
@@ -128,12 +126,8 @@ export default function App() {
 
   // Función Central de Validación de Login
   const validateLogin = (inputPass) => {
-      // Prioridad: 1. DB Password, 2. Env Password
       const activePassword = dbPassword || ENV_PASSWORD;
-      
-      // Si no hay ninguna configurada, bloqueamos acceso por seguridad
       if (!activePassword) return false;
-
       return inputPass === activePassword;
   };
 
@@ -257,20 +251,23 @@ function Login({ onValidate, onLogin, onBack }) {
 }
 
 function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
-  const [tab, setTab] = useState('content'); // 'content' | 'settings'
+  const [tab, setTab] = useState('content');
   const [scheduleMode, setScheduleMode] = useState('now');
   const [newUrl, setNewUrl] = useState('');
   const [newTitle, setNewTitle] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   
+  // Estado para Edición
+  const [editingId, setEditingId] = useState(null);
+
   // State para cambio de pass
   const [newPass, setNewPass] = useState('');
   const [passMsg, setPassMsg] = useState('');
 
   const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
 
-  const handleAdd = async (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     const yId = getYouTubeId(newUrl);
     if (!yId) return alert("URL de YouTube inválida");
@@ -279,10 +276,10 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
       const payload = {
         youtubeId: yId,
         title: newTitle || 'Video Sin Título',
-        visible: true,
-        order: playlist.length,
-        createdAt: new Date().toISOString(),
+        // Visible por defecto al crear, mantener valor al editar
+        visible: editingId ? (playlist.find(p => p.id === editingId)?.visible ?? true) : true,
       };
+
       if (scheduleMode === 'now') {
         payload.startDate = getTodayString();
         payload.endDate = endDate || null; 
@@ -290,12 +287,51 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
         payload.startDate = startDate || getTodayString();
         payload.endDate = endDate || null;
       }
-      payload.expiresAt = null;
-      await addDoc(playlistRef, payload);
-      setNewUrl(''); setNewTitle(''); setStartDate(''); setEndDate('');
+      payload.expiresAt = null; // Limpieza legacy
+
+      if (editingId) {
+        // ACTUALIZAR EXISTENTE
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', editingId), payload);
+        resetForm();
+      } else {
+        // CREAR NUEVO
+        payload.order = playlist.length;
+        payload.createdAt = new Date().toISOString();
+        await addDoc(playlistRef, payload);
+        resetForm();
+      }
     } catch (err) {
+      console.error(err);
       alert("Error al guardar en Firebase.");
     }
+  };
+
+  const startEditing = (item) => {
+    setEditingId(item.id);
+    setNewTitle(item.title);
+    setNewUrl(`https://youtu.be/${item.youtubeId}`); // Reconstruir URL para visualización
+    setStartDate(item.startDate || '');
+    setEndDate(item.endDate || '');
+    
+    // Determinar modo basado en fechas
+    const today = getTodayString();
+    if (item.startDate && item.startDate > today) {
+        setScheduleMode('schedule');
+    } else {
+        setScheduleMode('now');
+    }
+    
+    // Scrollear hacia arriba (móvil)
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setNewUrl('');
+    setNewTitle('');
+    setStartDate('');
+    setEndDate('');
+    setScheduleMode('now');
   };
 
   const handleChangePass = async (e) => {
@@ -311,7 +347,13 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
       }
   };
 
-  const deleteItem = async (id) => await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id));
+  const deleteItem = async (id) => {
+      if(confirm('¿Estás seguro de eliminar este video?')) {
+          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id));
+          if(editingId === id) resetForm();
+      }
+  };
+  
   const toggleVisibility = async (id, status) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id), { visible: !status });
 
   const moveItem = async (index, direction) => {
@@ -368,10 +410,20 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
       ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1">
-          <div className="bg-slate-900/80 rounded-3xl p-6 border border-white/10 sticky top-6 shadow-2xl space-y-5 backdrop-blur-xl">
-            <h3 className="text-lg font-bold flex items-center gap-2 text-white"><Plus className="text-indigo-500" size={20} /> Crear Contenido</h3>
+          <div className={`bg-slate-900/80 rounded-3xl p-6 border transition-all sticky top-6 shadow-2xl space-y-5 backdrop-blur-xl ${editingId ? 'border-indigo-500 ring-1 ring-indigo-500/50' : 'border-white/10'}`}>
+            <div className="flex justify-between items-center">
+                <h3 className="text-lg font-bold flex items-center gap-2 text-white">
+                    {editingId ? <Pencil className="text-indigo-400" size={20} /> : <Plus className="text-indigo-500" size={20} />} 
+                    {editingId ? 'Editar Contenido' : 'Crear Contenido'}
+                </h3>
+                {editingId && (
+                    <button onClick={resetForm} className="text-xs flex items-center gap-1 text-slate-400 hover:text-white bg-slate-800 px-2 py-1 rounded-lg transition-colors">
+                        <X size={14} /> Cancelar
+                    </button>
+                )}
+            </div>
             
-            <form onSubmit={handleAdd} className="space-y-4">
+            <form onSubmit={handleSave} className="space-y-4">
               <div className="flex p-1 bg-slate-950 rounded-xl border border-slate-800">
                 <button type="button" onClick={() => setScheduleMode('now')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scheduleMode === 'now' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Publicar Ahora</button>
                 <button type="button" onClick={() => setScheduleMode('schedule')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scheduleMode === 'schedule' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Programar</button>
@@ -387,21 +439,38 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
               </div>
               
               <div className="grid grid-cols-2 gap-3">
+                {/* CALENDARIO MEJORADO (Estilo UI Component) */}
                 {scheduleMode === 'schedule' && (
                   <div className="space-y-1 col-span-2 sm:col-span-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Fecha Inicio</label>
-                    <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-xs focus:border-indigo-500 outline-none text-white scheme-dark" />
+                    <div className="relative group">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500 pointer-events-none group-focus-within:text-white transition-colors" size={16} />
+                        <input 
+                            type="date" 
+                            value={startDate} 
+                            onChange={(e) => setStartDate(e.target.value)} 
+                            className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-3 py-3 text-xs focus:border-indigo-500 outline-none text-white scheme-dark cursor-pointer hover:bg-slate-900 transition-colors" 
+                        />
+                    </div>
                   </div>
                 )}
                 
                 <div className={`space-y-1 ${scheduleMode === 'now' ? 'col-span-2' : 'col-span-2 sm:col-span-1'}`}>
                   <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Fecha Fin (Opcional)</label>
-                  <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-xs focus:border-indigo-500 outline-none text-white scheme-dark" />
+                  <div className="relative group">
+                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-focus-within:text-white transition-colors" size={16} />
+                    <input 
+                        type="date" 
+                        value={endDate} 
+                        onChange={(e) => setEndDate(e.target.value)} 
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-3 py-3 text-xs focus:border-indigo-500 outline-none text-white scheme-dark cursor-pointer hover:bg-slate-900 transition-colors" 
+                    />
+                  </div>
                 </div>
               </div>
 
-              <button disabled={!newUrl} type="submit" className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 rounded-xl font-bold shadow-lg transition-all hover:shadow-indigo-500/20 active:scale-[0.98] mt-2">
-                {scheduleMode === 'now' ? 'PUBLICAR INMEDIATAMENTE' : 'PROGRAMAR LANZAMIENTO'}
+              <button disabled={!newUrl} type="submit" className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all active:scale-[0.98] mt-2 ${editingId ? 'bg-emerald-600 hover:bg-emerald-500 hover:shadow-emerald-500/20' : 'bg-indigo-600 hover:bg-indigo-500 hover:shadow-indigo-500/20 disabled:bg-slate-800 disabled:text-slate-600'}`}>
+                {editingId ? 'GUARDAR CAMBIOS' : (scheduleMode === 'now' ? 'PUBLICAR AHORA' : 'PROGRAMAR')}
               </button>
             </form>
           </div>
@@ -417,11 +486,12 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
             const isActive = (!item.startDate || item.startDate <= now) && (!item.endDate || item.endDate >= now);
             const isScheduled = item.startDate > now;
             const isExpired = item.endDate && item.endDate < now;
+            const isEditing = editingId === item.id;
 
             return (
-              <div key={item.id} className={`flex items-center gap-4 p-4 bg-slate-900/60 rounded-2xl border transition-all ${item.visible && isActive ? 'border-indigo-500/30 shadow-lg shadow-indigo-900/10' : 'border-white/5 opacity-60'}`}>
-                <div className="w-32 aspect-video bg-black rounded-xl overflow-hidden flex-shrink-0 relative">
-                  <img src={`https://img.youtube.com/vi/${item.youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover" alt="thumb" />
+              <div key={item.id} className={`flex items-center gap-4 p-4 bg-slate-900/60 rounded-2xl border transition-all ${isEditing ? 'border-indigo-500 bg-indigo-500/10' : (item.visible && isActive ? 'border-indigo-500/30 shadow-lg shadow-indigo-900/10' : 'border-white/5 opacity-60')}`}>
+                <div className="w-32 aspect-video bg-black rounded-xl overflow-hidden flex-shrink-0 relative group">
+                  <img src={`https://img.youtube.com/vi/${item.youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt="thumb" />
                   {isExpired && <div className="absolute inset-0 bg-red-950/80 flex items-center justify-center"><span className="text-[10px] font-bold text-white bg-red-600 px-2 py-1 rounded">VENCIDO</span></div>}
                   {isScheduled && <div className="absolute inset-0 bg-indigo-950/80 flex items-center justify-center"><span className="text-[10px] font-bold text-white bg-indigo-600 px-2 py-1 rounded">PROGRAMADO</span></div>}
                 </div>
@@ -443,6 +513,9 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
+                  <button onClick={() => startEditing(item)} className={`p-2.5 rounded-xl transition-colors ${isEditing ? 'bg-indigo-600 text-white' : 'hover:bg-slate-700 text-slate-400 hover:text-white'}`} title="Editar">
+                    <Pencil size={18} />
+                  </button>
                   <button onClick={() => toggleVisibility(item.id, item.visible)} className={`p-2.5 rounded-xl transition-colors ${item.visible ? 'hover:bg-slate-700 text-slate-400' : 'bg-red-500/10 text-red-400 hover:bg-red-500/20'}`}>
                     {item.visible ? <Eye size={18} /> : <EyeOff size={18} />}
                   </button>
