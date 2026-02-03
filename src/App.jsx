@@ -4,21 +4,45 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, deleteField } from 'firebase/firestore';
 
-// --- Configuración de Firebase Segura (.env) ---
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+// --- Función Segura para Variables de Entorno ---
+const getEnv = (key) => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      return import.meta.env[key];
+    }
+  } catch (e) {
+    console.warn("No se pudieron leer las variables de entorno.");
+  }
+  return ""; // Retorna vacío si falla, no expone claves reales.
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+// --- Configuración de Firebase (SOLO VARIABLES) ---
+const firebaseConfig = {
+  apiKey: getEnv("VITE_FIREBASE_API_KEY"),
+  authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN"),
+  projectId: getEnv("VITE_FIREBASE_PROJECT_ID"),
+  storageBucket: getEnv("VITE_FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: getEnv("VITE_FIREBASE_MESSAGING_SENDER_ID"),
+  appId: getEnv("VITE_FIREBASE_APP_ID")
+};
 
-// ID interno para organizar los datos en Firestore
+// --- Configuración de Seguridad ---
+const ADMIN_PASSWORD = getEnv("VITE_ADMIN_PASSWORD");
+
+// Inicialización condicional para evitar crash si faltan las variables
+let app, auth, db;
+try {
+  if (firebaseConfig.apiKey) {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } else {
+    console.error("Faltan las variables de entorno de Firebase.");
+  }
+} catch (error) {
+  console.error("Error inicializando Firebase:", error);
+}
+
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'tvincentivos-prod';
 
 // --- Utilerías ---
@@ -29,7 +53,6 @@ const getYouTubeId = (url) => {
   return (match && match[2].length === 11) ? match[2] : null;
 };
 
-// Obtener fecha actual en formato YYYY-MM-DD para inputs
 const getTodayString = () => new Date().toISOString().split('T')[0];
 
 export default function App() {
@@ -58,11 +81,16 @@ export default function App() {
 
   // 2. Auth
   useEffect(() => {
+    if (!auth) return; // Guard clause si no hay config
     const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (error) {
+        console.error("Error Auth:", error);
       }
     };
     initAuth();
@@ -72,7 +100,7 @@ export default function App() {
 
   // 3. Sync
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) return;
     const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
     const unsubscribe = onSnapshot(playlistRef, (snapshot) => {
       const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -80,6 +108,19 @@ export default function App() {
     }, (error) => console.error("Error Sync:", error));
     return () => unsubscribe();
   }, [user]);
+
+  // Si no hay configuración, muestra un error amigable
+  if (!app) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center text-white p-8 text-center">
+        <div>
+          <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Error de Configuración</h1>
+          <p className="text-slate-400 max-w-md">No se han detectado las variables de entorno. Por favor configura el archivo .env o las variables en Vercel.</p>
+        </div>
+      </div>
+    );
+  }
 
   const renderView = () => {
     switch (view) {
@@ -142,11 +183,19 @@ function Landing({ onSelectTV, onSelectAdmin }) {
 function Login({ onLogin, onBack }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
+  
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (password === '1234') onLogin();
-    else { setError(true); setPassword(''); }
+    // Valida contra la variable de entorno, si no existe la variable, nadie puede entrar.
+    if (ADMIN_PASSWORD && password === ADMIN_PASSWORD) {
+        onLogin();
+    } else { 
+        setError(true); 
+        setPassword(''); 
+        if (!ADMIN_PASSWORD) console.warn("Advertencia: VITE_ADMIN_PASSWORD no está configurada.");
+    }
   };
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-md bg-slate-900/90 border border-white/10 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl">
@@ -169,11 +218,9 @@ function Login({ onLogin, onBack }) {
 }
 
 function AdminPanel({ playlist, onLogout, onGoToTV }) {
-  const [scheduleMode, setScheduleMode] = useState('now'); // 'now' | 'schedule'
+  const [scheduleMode, setScheduleMode] = useState('now');
   const [newUrl, setNewUrl] = useState('');
   const [newTitle, setNewTitle] = useState('');
-  
-  // Fechas para programación
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -194,21 +241,15 @@ function AdminPanel({ playlist, onLogout, onGoToTV }) {
       };
 
       if (scheduleMode === 'now') {
-        // Publicar ahora: Fecha inicio HOY, Fecha fin NULL (o la que se ponga opcionalmente)
         payload.startDate = getTodayString();
         payload.endDate = endDate || null; 
       } else {
-        // Programar: Usar fechas específicas
         payload.startDate = startDate || getTodayString();
         payload.endDate = endDate || null;
       }
-
-      // Limpieza de campos legacy (opcional, para mantener consistencia)
-      payload.expiresAt = null; // Dejamos de usar este campo en favor de endDate
+      payload.expiresAt = null;
 
       await addDoc(playlistRef, payload);
-      
-      // Reset
       setNewUrl(''); setNewTitle(''); setStartDate(''); setEndDate('');
     } catch (err) {
       alert("Error al guardar en Firebase.");
@@ -249,22 +290,9 @@ function AdminPanel({ playlist, onLogout, onGoToTV }) {
             <h3 className="text-lg font-bold flex items-center gap-2 text-white"><Plus className="text-indigo-500" size={20} /> Crear Contenido</h3>
             
             <form onSubmit={handleAdd} className="space-y-4">
-              {/* Tabs de Modo */}
               <div className="flex p-1 bg-slate-950 rounded-xl border border-slate-800">
-                <button 
-                  type="button" 
-                  onClick={() => setScheduleMode('now')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scheduleMode === 'now' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                >
-                  Publicar Ahora
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setScheduleMode('schedule')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scheduleMode === 'schedule' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                >
-                  Programar
-                </button>
+                <button type="button" onClick={() => setScheduleMode('now')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scheduleMode === 'now' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Publicar Ahora</button>
+                <button type="button" onClick={() => setScheduleMode('schedule')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${scheduleMode === 'schedule' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Programar</button>
               </div>
 
               <div className="space-y-1">
@@ -276,7 +304,6 @@ function AdminPanel({ playlist, onLogout, onGoToTV }) {
                 <input type="text" value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://..." className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" />
               </div>
               
-              {/* Fechas Dinámicas */}
               <div className="grid grid-cols-2 gap-3">
                 {scheduleMode === 'schedule' && (
                   <div className="space-y-1 col-span-2 sm:col-span-1">
@@ -362,15 +389,10 @@ function TVMode({ playlist, onExit }) {
   const playerRef = useRef(null);
   const uiTimerRef = useRef(null);
   
-  // LOGICA DE FILTRO AVANZADA:
-  // 1. Visible = true
-  // 2. Fecha Actual >= startDate (o startDate no existe)
-  // 3. Fecha Actual <= endDate (o endDate no existe)
   const activePlaylist = playlist.filter(v => {
     if (!v.visible) return false;
-    const now = new Date().toISOString().split('T')[0]; // YYYY-MM-DD local
+    const now = new Date().toISOString().split('T')[0];
     const startOk = !v.startDate || v.startDate <= now;
-    // Soporte retroactivo para 'expiresAt' si endDate no existe
     const end = v.endDate || v.expiresAt;
     const endOk = !end || end >= now;
     return startOk && endOk;
@@ -384,15 +406,12 @@ function TVMode({ playlist, onExit }) {
     uiTimerRef.current = setTimeout(() => setShowUI(false), 3000);
   }, []);
 
-  // Función crítica para manejo de loops y playlist
   const handleNext = useCallback(() => {
-    // FIX LOOP 1 VIDEO: Si solo hay 1 video, no cambiamos índice, forzamos replay
     if (activePlaylist.length === 1 && playerRef.current) {
         playerRef.current.seekTo(0);
         playerRef.current.playVideo();
         return;
     }
-    // Loop normal
     setCurrentIdx((prev) => (prev + 1 >= activePlaylist.length ? 0 : prev + 1));
   }, [activePlaylist.length]);
 
@@ -428,7 +447,6 @@ function TVMode({ playlist, onExit }) {
                 try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {}
             }
             if (e.data === window.YT.PlayerState.ENDED) {
-                // AQUÍ también controlamos el loop de 1 video por si acaso
                 if (activePlaylist.length === 1) {
                     e.target.seekTo(0);
                     e.target.playVideo();
@@ -464,7 +482,7 @@ function TVMode({ playlist, onExit }) {
       window.removeEventListener('touchstart', resetUITimer);
       if (uiTimerRef.current) clearTimeout(uiTimerRef.current);
     };
-  }, [currentVideo, resetUITimer, activePlaylist.length]); // Añadido activePlaylist.length a dependencias
+  }, [currentVideo, resetUITimer, activePlaylist.length]);
 
   const unmuteManually = () => {
     if(playerRef.current && playerRef.current.unMute) {
