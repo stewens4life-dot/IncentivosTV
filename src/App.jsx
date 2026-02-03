@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Volume2, Clock, CheckCircle } from 'lucide-react';
+import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Volume2, Clock, CheckCircle, Shield, Key } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, deleteField } from 'firebase/firestore';
+import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, deleteField, setDoc } from 'firebase/firestore';
 
 // --- Función Segura para Variables de Entorno ---
 const getEnv = (key) => {
@@ -13,10 +13,10 @@ const getEnv = (key) => {
   } catch (e) {
     console.warn("No se pudieron leer las variables de entorno.");
   }
-  return ""; // Retorna vacío si falla, no expone claves reales.
+  return ""; 
 };
 
-// --- Configuración de Firebase (SOLO VARIABLES) ---
+// --- Configuración de Firebase ---
 const firebaseConfig = {
   apiKey: getEnv("VITE_FIREBASE_API_KEY"),
   authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN"),
@@ -26,10 +26,11 @@ const firebaseConfig = {
   appId: getEnv("VITE_FIREBASE_APP_ID")
 };
 
-// --- Configuración de Seguridad ---
-const ADMIN_PASSWORD = getEnv("VITE_ADMIN_PASSWORD");
+// --- Contraseña Maestra (Respaldo del .env) ---
+// Si no hay nada en la DB, se usa esta. Si no hay esta, nadie entra.
+const ENV_PASSWORD = getEnv("VITE_ADMIN_PASSWORD");
 
-// Inicialización condicional para evitar crash si faltan las variables
+// Inicialización condicional
 let app, auth, db;
 try {
   if (firebaseConfig.apiKey) {
@@ -58,6 +59,7 @@ const getTodayString = () => new Date().toISOString().split('T')[0];
 export default function App() {
   const [view, setView] = useState('landing');
   const [playlist, setPlaylist] = useState([]);
+  const [dbPassword, setDbPassword] = useState(null); // Contraseña guardada en Firestore
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
@@ -79,9 +81,9 @@ export default function App() {
     setView(newView);
   };
 
-  // 2. Auth
+  // 2. Auth Firebase
   useEffect(() => {
-    if (!auth) return; // Guard clause si no hay config
+    if (!auth) return;
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -98,25 +100,63 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 3. Sync
+  // 3. Sync Playlist & Configuración
   useEffect(() => {
     if (!user || !db) return;
+    
+    // Sync Playlist
     const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
-    const unsubscribe = onSnapshot(playlistRef, (snapshot) => {
+    const unsubPlaylist = onSnapshot(playlistRef, (snapshot) => {
       const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setPlaylist(items.sort((a, b) => (a.order || 0) - (b.order || 0)));
-    }, (error) => console.error("Error Sync:", error));
-    return () => unsubscribe();
+    });
+
+    // Sync Contraseña (Settings)
+    // Guardamos la configuración en 'artifacts/{appId}/public/data/settings/auth'
+    const authDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'auth');
+    const unsubSettings = onSnapshot(authDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+            setDbPassword(docSnap.data().password);
+        }
+    });
+
+    return () => {
+        unsubPlaylist();
+        unsubSettings();
+    };
   }, [user]);
 
-  // Si no hay configuración, muestra un error amigable
+  // Función Central de Validación de Login
+  const validateLogin = (inputPass) => {
+      // Prioridad: 1. DB Password, 2. Env Password
+      const activePassword = dbPassword || ENV_PASSWORD;
+      
+      // Si no hay ninguna configurada, bloqueamos acceso por seguridad
+      if (!activePassword) return false;
+
+      return inputPass === activePassword;
+  };
+
+  // Función para Cambiar Contraseña
+  const handleUpdatePassword = async (newPass) => {
+      if (!db || !user) return;
+      try {
+          const authDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'auth');
+          await setDoc(authDocRef, { password: newPass }, { merge: true });
+          return true;
+      } catch (e) {
+          console.error("Error guardando clave", e);
+          return false;
+      }
+  };
+
   if (!app) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center text-white p-8 text-center">
         <div>
           <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold mb-2">Error de Configuración</h1>
-          <p className="text-slate-400 max-w-md">No se han detectado las variables de entorno. Por favor configura el archivo .env o las variables en Vercel.</p>
+          <p className="text-slate-400 max-w-md">No se han detectado las variables de entorno. Configura el archivo .env</p>
         </div>
       </div>
     );
@@ -127,9 +167,9 @@ export default function App() {
       case 'tv':
         return <TVMode playlist={playlist} onExit={() => navigateTo('landing')} />;
       case 'login':
-        return <Login onLogin={() => { setIsAuthenticated(true); setView('admin'); }} onBack={() => navigateTo('landing')} />;
+        return <Login onValidate={validateLogin} onLogin={() => { setIsAuthenticated(true); setView('admin'); }} onBack={() => navigateTo('landing')} />;
       case 'admin':
-        return <AdminPanel playlist={playlist} onLogout={() => { setIsAuthenticated(false); navigateTo('landing'); }} onGoToTV={() => navigateTo('tv')} />;
+        return <AdminPanel playlist={playlist} onUpdatePassword={handleUpdatePassword} onLogout={() => { setIsAuthenticated(false); navigateTo('landing'); }} onGoToTV={() => navigateTo('tv')} />;
       default:
         return <Landing onSelectTV={() => navigateTo('tv')} onSelectAdmin={() => navigateTo(isAuthenticated ? 'admin' : 'login')} />;
     }
@@ -180,19 +220,17 @@ function Landing({ onSelectTV, onSelectAdmin }) {
   );
 }
 
-function Login({ onLogin, onBack }) {
+function Login({ onValidate, onLogin, onBack }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
   
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Valida contra la variable de entorno, si no existe la variable, nadie puede entrar.
-    if (ADMIN_PASSWORD && password === ADMIN_PASSWORD) {
+    if (onValidate(password)) {
         onLogin();
     } else { 
         setError(true); 
         setPassword(''); 
-        if (!ADMIN_PASSWORD) console.warn("Advertencia: VITE_ADMIN_PASSWORD no está configurada.");
     }
   };
 
@@ -207,6 +245,7 @@ function Login({ onLogin, onBack }) {
         </div>
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           <input type="password" placeholder="••••" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-4 bg-slate-950 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-center tracking-[0.5em] text-2xl font-bold transition-all" autoFocus />
+          {error && <p className="text-red-400 text-center text-xs font-bold animate-pulse">CONTRASEÑA INCORRECTA</p>}
           <div className="flex gap-3">
             <button type="button" onClick={onBack} className="flex-1 px-4 py-3 bg-transparent border border-white/10 text-slate-400 rounded-xl font-medium hover:bg-white/5 transition-colors">Volver</button>
             <button type="submit" className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-900/20">Entrar</button>
@@ -217,12 +256,17 @@ function Login({ onLogin, onBack }) {
   );
 }
 
-function AdminPanel({ playlist, onLogout, onGoToTV }) {
+function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
+  const [tab, setTab] = useState('content'); // 'content' | 'settings'
   const [scheduleMode, setScheduleMode] = useState('now');
   const [newUrl, setNewUrl] = useState('');
   const [newTitle, setNewTitle] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  
+  // State para cambio de pass
+  const [newPass, setNewPass] = useState('');
+  const [passMsg, setPassMsg] = useState('');
 
   const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
 
@@ -239,7 +283,6 @@ function AdminPanel({ playlist, onLogout, onGoToTV }) {
         order: playlist.length,
         createdAt: new Date().toISOString(),
       };
-
       if (scheduleMode === 'now') {
         payload.startDate = getTodayString();
         payload.endDate = endDate || null; 
@@ -248,12 +291,24 @@ function AdminPanel({ playlist, onLogout, onGoToTV }) {
         payload.endDate = endDate || null;
       }
       payload.expiresAt = null;
-
       await addDoc(playlistRef, payload);
       setNewUrl(''); setNewTitle(''); setStartDate(''); setEndDate('');
     } catch (err) {
       alert("Error al guardar en Firebase.");
     }
+  };
+
+  const handleChangePass = async (e) => {
+      e.preventDefault();
+      if (!newPass) return;
+      const success = await onUpdatePassword(newPass);
+      if (success) {
+          setPassMsg('¡Contraseña actualizada con éxito!');
+          setNewPass('');
+          setTimeout(() => setPassMsg(''), 3000);
+      } else {
+          setPassMsg('Error al actualizar.');
+      }
   };
 
   const deleteItem = async (id) => await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id));
@@ -279,11 +334,38 @@ function AdminPanel({ playlist, onLogout, onGoToTV }) {
           </div>
         </div>
         <div className="flex gap-3">
-          <button onClick={onGoToTV} className="flex items-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-bold text-white shadow-lg transition-all hover:scale-105 active:scale-95"><MonitorPlay size={18} /> IR A /LIVE</button>
+          <button onClick={() => setTab('content')} className={`px-4 py-3 rounded-xl text-xs font-bold transition-all ${tab === 'content' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>CONTENIDO</button>
+          <button onClick={() => setTab('settings')} className={`px-4 py-3 rounded-xl text-xs font-bold transition-all ${tab === 'settings' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>SEGURIDAD</button>
+          <div className="w-px h-10 bg-white/10 mx-1"></div>
+          <button onClick={onGoToTV} className="flex items-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-bold text-white shadow-lg transition-all hover:scale-105 active:scale-95"><MonitorPlay size={18} /> LIVE</button>
           <button onClick={onLogout} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-xl border border-white/5 transition-colors"><LogOut size={18} /></button>
         </div>
       </header>
 
+      {tab === 'settings' ? (
+        <div className="max-w-md mx-auto">
+            <div className="bg-slate-900/80 rounded-3xl p-8 border border-white/10 shadow-2xl backdrop-blur-xl">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-3 bg-indigo-500/20 rounded-full"><Shield className="text-indigo-400" /></div>
+                    <h3 className="text-xl font-bold text-white">Seguridad de Acceso</h3>
+                </div>
+                <p className="text-slate-400 text-sm mb-6">Define una contraseña personalizada para el panel. Esto sobreescribirá la contraseña del entorno (.env).</p>
+                <form onSubmit={handleChangePass} className="space-y-4">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Nueva Contraseña</label>
+                        <div className="relative">
+                            <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                            <input type="text" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="Ingresa nueva clave" className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" />
+                        </div>
+                    </div>
+                    <button disabled={!newPass} type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 rounded-xl font-bold shadow-lg transition-all">
+                        ACTUALIZAR CONTRASEÑA
+                    </button>
+                    {passMsg && <p className={`text-center text-xs font-bold mt-2 ${passMsg.includes('éxito') ? 'text-emerald-400' : 'text-red-400'}`}>{passMsg}</p>}
+                </form>
+            </div>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1">
           <div className="bg-slate-900/80 rounded-3xl p-6 border border-white/10 sticky top-6 shadow-2xl space-y-5 backdrop-blur-xl">
@@ -375,6 +457,7 @@ function AdminPanel({ playlist, onLogout, onGoToTV }) {
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }
