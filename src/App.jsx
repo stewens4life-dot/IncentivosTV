@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube } from 'lucide-react';
+import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube, GripVertical } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
 
 // --- Función Segura para Variables de Entorno ---
 const getEnv = (key, fallback) => {
@@ -43,7 +43,6 @@ try {
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'tvincentivos-prod';
 
 // --- Utilerías para YouTube ---
-
 const getYouTubeId = (url) => {
   if (!url) return null;
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -146,13 +145,13 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-indigo-500 selection:text-white overflow-y-auto">
       {/* Fondo decorativo */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/10 rounded-full blur-[120px]" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/10 rounded-full blur-[120px]" />
       </div>
-      <div className="relative z-10 w-full h-full">
+      <div className="relative z-10 w-full min-h-screen">
         {renderView()}
       </div>
     </div>
@@ -226,6 +225,9 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   const [editingId, setEditingId] = useState(null);
   const [newPass, setNewPass] = useState('');
   const [passMsg, setPassMsg] = useState('');
+  
+  // Drag and Drop state
+  const [draggedItemIndex, setDraggedItemIndex] = useState(null);
 
   const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
 
@@ -286,17 +288,47 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
 
   const deleteItem = async (id) => { if(confirm('¿Eliminar?')) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id)); if(editingId === id) resetForm(); } };
   const toggleVisibility = async (id, status) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id), { visible: !status });
+  
   const moveItem = async (index, dir) => {
     const target = index + dir;
     if (target < 0 || target >= playlist.length) return;
-    const a = playlist[index], b = playlist[target];
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', a.id), { order: target });
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', b.id), { order: index });
+    updatePlaylistOrder(index, target);
+  };
+
+  const updatePlaylistOrder = async (oldIndex, newIndex) => {
+    const newPlaylist = [...playlist];
+    const [movedItem] = newPlaylist.splice(oldIndex, 1);
+    newPlaylist.splice(newIndex, 0, movedItem);
+
+    const batch = writeBatch(db);
+    newPlaylist.forEach((item, idx) => {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', item.id);
+        batch.update(docRef, { order: idx });
+    });
+    await batch.commit();
+  };
+
+  // Drag and Drop handlers
+  const handleDragStart = (e, index) => {
+    setDraggedItemIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedItemIndex === index) return;
+  };
+
+  const handleDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedItemIndex === null || draggedItemIndex === index) return;
+    updatePlaylistOrder(draggedItemIndex, index);
+    setDraggedItemIndex(null);
   };
 
   return (
-    <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto pb-20">
-      <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6 bg-slate-900/50 p-6 rounded-3xl border border-white/5 backdrop-blur-md sticky top-4 z-40">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto pb-24">
+      <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6 bg-slate-900/60 p-6 rounded-3xl border border-white/5 backdrop-blur-md sticky top-4 z-40 shadow-2xl">
         <div className="flex items-center gap-4">
           <div className="p-3 bg-indigo-500/20 rounded-xl"><List className="text-indigo-400 w-6 h-6" /></div>
           <div><h1 className="text-2xl font-bold text-white tracking-tight">Consola /dashboard</h1><p className="text-slate-400 text-[10px] font-mono uppercase tracking-widest">Conexión: <span className="animate-pulse text-emerald-400 font-bold">Live</span></p></div>
@@ -315,7 +347,7 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
       {tab === 'settings' ? (
         <div className="max-w-md mx-auto bg-slate-900/80 rounded-3xl p-8 border border-white/10 shadow-2xl backdrop-blur-xl">
             <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Shield className="text-indigo-400"/> Seguridad</h3>
-            <p className="text-slate-400 text-sm mb-6">Cambia la contraseña de acceso al panel. Si la dejas vacía se usará la del sistema.</p>
+            <p className="text-slate-400 text-sm mb-6">Cambia la contraseña de acceso al panel.</p>
             <form onSubmit={handleChangePass} className="space-y-4">
                 <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Nueva Clave</label>
@@ -358,11 +390,12 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
           </div>
         </div>
 
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-2 space-y-4 min-h-[500px]">
           <div className="flex justify-between items-center mb-2 px-2">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Playlist Activa ({playlist.length})</h3>
+            <span className="text-[8px] text-slate-600 italic">TIP: Arrastra el icono lateral para reordenar</span>
           </div>
-          {/* La lista fluirá naturalmente con el scroll de la página */}
+          
           {playlist.map((item, index) => {
             const isEditing = editingId === item.id;
             const now = getTodayString();
@@ -370,28 +403,44 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
             const isExpired = item.endDate && item.endDate < now;
 
             return (
-              <div key={item.id} className={`flex items-center gap-4 p-4 bg-slate-900/60 rounded-2xl border transition-all ${isEditing ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/5 opacity-90 hover:opacity-100 hover:border-white/10'}`}>
-                <div className="w-24 md:w-32 aspect-video bg-black rounded-xl overflow-hidden flex-shrink-0 relative">
+              <div 
+                key={item.id} 
+                draggable
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDrop={(e) => handleDrop(e, index)}
+                className={`flex items-center gap-3 p-3 bg-slate-900/60 rounded-2xl border transition-all cursor-move group ${isEditing ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/5 opacity-90 hover:opacity-100 hover:border-white/10'}`}
+              >
+                {/* Drag Handle */}
+                <div className="text-slate-600 group-hover:text-slate-400 transition-colors">
+                    <GripVertical size={20} />
+                </div>
+
+                <div className="w-20 md:w-28 aspect-video bg-black rounded-xl overflow-hidden flex-shrink-0 relative">
                     <img src={`https://img.youtube.com/vi/${item.youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover opacity-80" alt="miniatura" />
-                    {isExpired && <div className="absolute inset-0 bg-red-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-red-600 px-2 py-0.5 rounded uppercase">Vencido</span></div>}
-                    {isScheduled && <div className="absolute inset-0 bg-indigo-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-indigo-600 px-2 py-0.5 rounded uppercase">Programado</span></div>}
-                    <div className="absolute top-1 left-1 bg-red-600 p-1 rounded-full shadow-lg"><Youtube size={10} color="white"/></div>
+                    {isExpired && <div className="absolute inset-0 bg-red-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-red-600 px-2 py-0.5 rounded uppercase">Fin</span></div>}
+                    {isScheduled && <div className="absolute inset-0 bg-indigo-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-indigo-600 px-2 py-0.5 rounded uppercase">Pronto</span></div>}
                 </div>
+
                 <div className="flex-1 min-w-0">
-                  <h4 className="font-bold text-white truncate text-sm md:text-base leading-tight">{item.title}</h4>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
-                    {item.startDate && <span className="text-[9px] flex items-center gap-1 text-slate-400"><Calendar size={10} /> {item.startDate}</span>}
-                    {item.endDate && <span className="text-[9px] flex items-center gap-1 text-emerald-400"><Clock size={10} /> {item.endDate}</span>}
+                  <h4 className="font-bold text-white truncate text-xs md:text-sm leading-tight">{item.title}</h4>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                    {item.startDate && <span className="text-[8px] flex items-center gap-1 text-slate-400"><Calendar size={8} /> {item.startDate}</span>}
+                    {item.endDate && <span className="text-[8px] flex items-center gap-1 text-emerald-400"><Clock size={8} /> {item.endDate}</span>}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 md:gap-2">
-                  <button onClick={() => startEditing(item)} className={`p-2 rounded-lg transition-colors ${isEditing ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-600/20 text-slate-400 hover:text-white'}`} title="Editar"><Pencil size={16} /></button>
-                  <button onClick={() => toggleVisibility(item.id, item.visible)} className={`p-2 rounded-lg transition-colors ${item.visible ? 'hover:bg-slate-700 text-slate-400' : 'bg-red-500/10 text-red-500'}`}>{item.visible ? <Eye size={16} /> : <EyeOff size={16} />}</button>
-                  <div className="flex flex-col gap-0.5">
-                    <button onClick={() => moveItem(index, -1)} disabled={index === 0} className="p-0.5 hover:bg-slate-700 rounded disabled:opacity-0 transition-all"><ArrowUp size={14}/></button>
-                    <button onClick={() => moveItem(index, 1)} disabled={index === playlist.length-1} className="p-0.5 hover:bg-slate-700 rounded disabled:opacity-0 transition-all"><ArrowDown size={14}/></button>
+
+                <div className="flex items-center gap-1">
+                  <button onClick={() => startEditing(item)} className={`p-2 rounded-lg transition-colors ${isEditing ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-600/20 text-slate-400 hover:text-white'}`} title="Editar"><Pencil size={14} /></button>
+                  <button onClick={() => toggleVisibility(item.id, item.visible)} className={`p-2 rounded-lg transition-colors ${item.visible ? 'hover:bg-slate-700 text-slate-400' : 'bg-red-500/10 text-red-500'}`}>{item.visible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
+                  
+                  {/* Controles de flecha como alternativa al drag */}
+                  <div className="flex flex-col gap-0.5 ml-1 border-l border-white/5 pl-1 hidden md:flex">
+                    <button onClick={() => moveItem(index, -1)} disabled={index === 0} className="p-0.5 hover:bg-slate-700 rounded disabled:opacity-0 transition-all"><ArrowUp size={12}/></button>
+                    <button onClick={() => moveItem(index, 1)} disabled={index === playlist.length-1} className="p-0.5 hover:bg-slate-700 rounded disabled:opacity-0 transition-all"><ArrowDown size={12}/></button>
                   </div>
-                  <button onClick={() => deleteItem(item.id)} className="p-2 hover:bg-red-600/20 text-slate-500 hover:text-red-500 rounded-lg ml-1 transition-colors"><Trash2 size={16} /></button>
+                  
+                  <button onClick={() => deleteItem(item.id)} className="p-2 hover:bg-red-600/20 text-slate-500 hover:text-red-500 rounded-lg ml-1 transition-colors"><Trash2 size={14} /></button>
                 </div>
               </div>
             );
