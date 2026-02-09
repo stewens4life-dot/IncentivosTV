@@ -149,7 +149,7 @@ function Toast({ notification, onClose }) {
     const styles = { success: 'bg-emerald-950/90 border-emerald-500 text-emerald-100', error: 'bg-red-950/90 border-red-500 text-red-100', warning: 'bg-amber-950/90 border-amber-500 text-amber-100' };
     const icons = { success: <CheckCircle className="text-emerald-500" size={20} />, error: <AlertTriangle className="text-red-500" size={20} />, warning: <Info className="text-amber-500" size={20} /> };
     return (
-        <div className={`fixed top-6 right-6 z-[60] p-4 rounded-xl border shadow-2xl backdrop-blur-md animate-in slide-in-from-right-4 fade-in duration-300 max-w-sm w-full flex items-start gap-3 ${styles[notification.type]}`}>
+        <div className={`fixed top-6 right-6 z-[60] p-4 rounded-xl border shadow-2xl backdrop-blur-md animate-in slide-in-from-right-4 fade-in duration-150 max-w-sm w-full flex items-start gap-3 ${styles[notification.type]}`}>
             <div className="shrink-0 mt-0.5">{icons[notification.type]}</div>
             <div className="flex-1"><h4 className="font-bold text-sm uppercase tracking-wide">{notification.title}</h4><p className="text-xs opacity-90 mt-1">{notification.message}</p></div>
             <button onClick={onClose} className="opacity-50 hover:opacity-100 transition-opacity"><X size={16}/></button>
@@ -160,8 +160,8 @@ function Toast({ notification, onClose }) {
 function ConfirmModal({ isOpen, title, message, onConfirm, onCancel }) {
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-slate-900 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-sm w-full scale-100 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+            <div className="bg-slate-900 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-sm w-full scale-100 animate-in zoom-in-95 duration-150">
                 <h3 className="text-lg font-bold text-white mb-2">{title}</h3><p className="text-slate-400 text-sm mb-6 leading-relaxed">{message}</p>
                 <div className="flex gap-3"><button onClick={onCancel} className="flex-1 py-2.5 rounded-xl text-slate-400 font-bold text-xs hover:bg-white/5 transition-colors">CANCELAR</button><button onClick={onConfirm} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-xs shadow-lg">CONFIRMAR</button></div>
             </div>
