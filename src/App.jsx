@@ -17,6 +17,7 @@ const getEnv = (key, fallback) => {
 };
 
 // --- Configuración de Firebase ---
+
 const firebaseConfig = {
   apiKey: getEnv("VITE_FIREBASE_API_KEY"),
   authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN"),
