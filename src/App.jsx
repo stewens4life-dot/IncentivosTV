@@ -145,11 +145,12 @@ export default function App() {
 
 function Toast({ notification, onClose }) {
     if (!notification) return null;
-    useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [notification, onClose]);
+    // Se mantiene en 2000ms (2 segundos) para alertas rápidas
+    useEffect(() => { const t = setTimeout(onClose, 2000); return () => clearTimeout(t); }, [notification, onClose]);
     const styles = { success: 'bg-emerald-950/90 border-emerald-500 text-emerald-100', error: 'bg-red-950/90 border-red-500 text-red-100', warning: 'bg-amber-950/90 border-amber-500 text-amber-100' };
     const icons = { success: <CheckCircle className="text-emerald-500" size={20} />, error: <AlertTriangle className="text-red-500" size={20} />, warning: <Info className="text-amber-500" size={20} /> };
     return (
-        <div className={`fixed top-6 right-6 z-[60] p-4 rounded-xl border shadow-2xl backdrop-blur-md animate-in slide-in-from-right-4 fade-in duration-150 max-w-sm w-full flex items-start gap-3 ${styles[notification.type]}`}>
+        <div className={`fixed top-6 right-6 z-[60] p-4 rounded-xl border shadow-2xl backdrop-blur-md animate-in slide-in-from-right-4 fade-in duration-300 max-w-sm w-full flex items-start gap-3 ${styles[notification.type]}`}>
             <div className="shrink-0 mt-0.5">{icons[notification.type]}</div>
             <div className="flex-1"><h4 className="font-bold text-sm uppercase tracking-wide">{notification.title}</h4><p className="text-xs opacity-90 mt-1">{notification.message}</p></div>
             <button onClick={onClose} className="opacity-50 hover:opacity-100 transition-opacity"><X size={16}/></button>
@@ -160,8 +161,8 @@ function Toast({ notification, onClose }) {
 function ConfirmModal({ isOpen, title, message, onConfirm, onCancel }) {
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-            <div className="bg-slate-900 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-sm w-full scale-100 animate-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-slate-900 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-sm w-full scale-100 animate-in zoom-in-95 duration-200">
                 <h3 className="text-lg font-bold text-white mb-2">{title}</h3><p className="text-slate-400 text-sm mb-6 leading-relaxed">{message}</p>
                 <div className="flex gap-3"><button onClick={onCancel} className="flex-1 py-2.5 rounded-xl text-slate-400 font-bold text-xs hover:bg-white/5 transition-colors">CANCELAR</button><button onClick={onConfirm} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-xs shadow-lg">CONFIRMAR</button></div>
             </div>
@@ -177,8 +178,8 @@ function Landing({ onSelectTV, onSelectAdmin }) {
       <div className="text-center space-y-10 max-w-2xl mx-auto">
         <div className="space-y-4">
           <div className="inline-flex items-center justify-center p-3 bg-indigo-500/10 rounded-2xl mb-4 border border-indigo-500/20 backdrop-blur-sm"><Film className="w-8 h-8 text-indigo-400" /></div>
-          <h1 className="text-6xl font-black tracking-tighter text-white drop-shadow-2xl">Stream<span className="text-indigo-500">Hub</span></h1>
-          <p className="text-slate-400 text-xl font-light italic">Gestión de Pantallas</p>
+          <h1 className="text-6xl font-black tracking-tighter text-white drop-shadow-2xl">4Life <span className="text-indigo-500">TV</span></h1>
+          <p className="text-slate-400 text-xl font-light italic">Colombia • Gestión de Pantallas</p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 w-full max-w-lg mx-auto">
           <button onClick={onSelectTV} className="group relative flex flex-col items-center p-8 bg-slate-900/50 hover:bg-slate-800/80 rounded-3xl border border-white/5 hover:border-indigo-500/50 transition-all duration-500 hover:-translate-y-2 backdrop-blur-md">
@@ -202,7 +203,7 @@ function Login({ onValidate, onLogin, onBack }) {
   return (
     <div className="flex items-center justify-center h-full bg-black/50 backdrop-blur-sm p-4 overflow-y-auto custom-scrollbar">
       <div className="w-full max-w-md bg-slate-900/90 border border-white/10 rounded-3xl shadow-2xl p-8">
-        <h2 className="text-2xl font-bold text-white text-center mb-6">Acceso /dashboard</h2>
+        <h2 className="text-2xl font-bold text-white text-center mb-6">Acceso 4Life Colombia</h2>
         <form onSubmit={handleSubmit} className="space-y-6">
           <input type="password" placeholder="••••" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-4 bg-slate-950 border border-slate-700 rounded-xl outline-none text-center text-2xl font-bold" autoFocus />
           {error && <p className="text-red-400 text-center text-xs font-bold animate-pulse uppercase tracking-widest">Contraseña Incorrecta</p>}
@@ -291,48 +292,28 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   const onDragStart = (e, index) => {
     setDragItemIndex(index);
     e.dataTransfer.effectAllowed = "move";
-    // Eliminamos la imagen fantasma por defecto si queremos personalizar (opcional), 
-    // pero aquí usaremos el comportamiento nativo que es más estable.
   };
 
   const onDragEnter = (e, index) => {
-    // Solo reordenamos si estamos sobre un item diferente
     if (dragItemIndex === null || dragItemIndex === index) return;
-
-    // Copia local para manipular
     const newList = [...sortedPlaylist];
     const item = newList[dragItemIndex];
-    
-    // Eliminamos de la posición vieja
     newList.splice(dragItemIndex, 1);
-    // Insertamos en la nueva
     newList.splice(index, 0, item);
-    
-    // Actualizamos visualmente
     setDragItemIndex(index);
     setSortedPlaylist(newList);
   };
 
   const onDragEnd = async () => {
     const finalIndex = dragItemIndex;
-    setDragItemIndex(null); // Fin del drag visual
-    
+    setDragItemIndex(null); 
     if (finalIndex === null) return;
-
-    // Guardar en Firebase el orden final
     const batch = writeBatch(db);
     sortedPlaylist.forEach((item, idx) => {
         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', item.id);
         batch.update(ref, { order: idx });
     });
-    
-    try {
-        await batch.commit();
-        // showToast("Orden Guardado", "La lista se ha reordenado.", "success"); // Opcional
-    } catch(e) {
-        showToast("Error", "No se pudo guardar el orden.", "error");
-        setSortedPlaylist(playlist); // Revertir si falla
-    }
+    try { await batch.commit(); } catch(e) { showToast("Error", "No se pudo guardar el orden.", "error"); setSortedPlaylist(playlist); }
   };
 
   return (
@@ -341,7 +322,7 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
       <ConfirmModal isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} />
 
       <header className="shrink-0 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-900/60 p-4 m-4 md:mx-8 rounded-3xl border border-white/5 backdrop-blur-md shadow-2xl z-40">
-        <div className="flex items-center gap-4"><div className="p-3 bg-indigo-500/20 rounded-xl"><List className="text-indigo-400 w-6 h-6" /></div><div><h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">Consola /dashboard</h1><p className="text-slate-400 text-[10px] font-mono uppercase tracking-widest">Conexión: <span className="animate-pulse text-emerald-400 font-bold">Live</span></p></div></div>
+        <div className="flex items-center gap-4"><div className="p-3 bg-indigo-500/20 rounded-xl"><List className="text-indigo-400 w-6 h-6" /></div><div><h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">Panel 4Life Colombia</h1><p className="text-slate-400 text-[10px] font-mono uppercase tracking-widest">Conexión: <span className="animate-pulse text-emerald-400 font-bold">Live</span></p></div></div>
         <div className="flex items-center gap-3">
           <div className="flex bg-slate-800/50 p-1 rounded-xl border border-white/5"><button onClick={() => setTab('content')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'content' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>CONTENIDO</button><button onClick={() => setTab('settings')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'settings' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>SEGURIDAD</button></div>
           <div className="w-px h-8 bg-white/10 mx-1 hidden md:block"></div>
@@ -463,6 +444,21 @@ function TVMode({ playlist, onExit }) {
     setCurrentIdx(prev => (prev + 1 >= activePlaylist.length ? 0 : prev + 1));
   }, [activePlaylist.length]);
 
+  // Watchdog hook: Checks every 2s if paused and forces play
+  useEffect(() => {
+      const interval = setInterval(() => {
+          if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+              const state = playerRef.current.getPlayerState();
+              // 2 = Paused, 5 = Video cued. If found, force play.
+              if (state === 2 || state === 5) {
+                  console.log("Watchdog: Forcing play");
+                  playerRef.current.playVideo();
+              }
+          }
+      }, 2000);
+      return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     if (!currentVideo) return;
     setErrorMsg(null);
@@ -470,10 +466,30 @@ function TVMode({ playlist, onExit }) {
         if (playerRef.current) { try { playerRef.current.destroy(); } catch(e){} }
         playerRef.current = new window.YT.Player('yt-player', {
             height: '100%', width: '100%', videoId: currentVideo.youtubeId,
-            playerVars: { 'autoplay': 1, 'mute': 1, 'controls': 0, 'rel': 0, 'showinfo': 0, 'modestbranding': 1, 'vq': 'hd1080', 'origin': window.location.origin },
+            playerVars: { 
+                'autoplay': 1, 
+                'mute': 1, 
+                'controls': 0, 
+                'rel': 0, 
+                'showinfo': 0, 
+                'modestbranding': 1, 
+                'vq': 'hd1080', 
+                'origin': window.location.origin,
+                'playsinline': 1 // Crucial for continuous playback in some browsers
+            },
             events: {
                 'onReady': (e) => { e.target.playVideo(); setTimeout(() => { try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} }, 800); },
-                'onStateChange': (e) => { if (e.data === window.YT.PlayerState.PLAYING) { setIsPlaying(true); try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} } if (e.data === window.YT.PlayerState.ENDED) handleNext(); },
+                'onStateChange': (e) => { 
+                    if (e.data === window.YT.PlayerState.PLAYING) { 
+                        setIsPlaying(true); 
+                        try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} 
+                    } 
+                    if (e.data === window.YT.PlayerState.ENDED) handleNext();
+                    // Auto-Resume on Pause (Browser throttling countermeasure)
+                    if (e.data === window.YT.PlayerState.PAUSED) {
+                        e.target.playVideo();
+                    }
+                },
                 'onError': () => { setErrorMsg("Señal perdida. Saltando..."); setTimeout(handleNext, 3000); }
             }
         });
@@ -494,7 +510,7 @@ function TVMode({ playlist, onExit }) {
   if (!currentVideo) return <div className="h-screen bg-black flex flex-col items-center justify-center text-white"><Tv size={64} className="text-slate-800 animate-pulse mb-4" /><p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-40">Sin Señal Programada</p><button onClick={onExit} className="mt-8 px-6 py-2 bg-white/5 border border-white/10 rounded-full text-[10px] font-bold hover:bg-white/10 transition-all uppercase tracking-widest">Salir</button></div>;
 
   return (
-    <div className="fixed inset-0 w-screen h-screen bg-black overflow-hidden group">
+    <div className={`fixed inset-0 w-screen h-screen bg-black overflow-hidden group ${showUI ? '' : 'cursor-none'}`}>
       <div id="yt-player" className="w-full h-full pointer-events-none scale-[1.01]"></div>
       {isMuted && isPlaying && <div className="absolute bottom-10 right-10 z-50 animate-bounce"><button onClick={() => {if(playerRef.current?.unMute){playerRef.current.unMute();setIsMuted(false);}}} className="bg-red-600 hover:bg-red-700 text-white p-5 rounded-full shadow-2xl transition-transform hover:scale-110"><VolumeX size={32} /></button><div className="text-center text-[8px] font-bold mt-2 text-white/40 uppercase tracking-widest bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">Activar Audio</div></div>}
       <div className={`absolute top-0 left-0 w-full z-30 transition-all duration-1000 pointer-events-none ${showUI ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
