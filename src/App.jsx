@@ -16,7 +16,6 @@ const getEnv = (key, fallback) => {
   return fallback || ""; 
 };
 
-
 // --- Configuración de Firebase ---
 const firebaseConfig = {
   apiKey: getEnv("VITE_FIREBASE_API_KEY"),
@@ -142,35 +141,17 @@ export default function App() {
   );
 }
 
-// --- COMPONENTES UI: ALERTAS Y MODALES ---
+// --- COMPONENTES UI ---
 
 function Toast({ notification, onClose }) {
     if (!notification) return null;
-    
-    // Auto-cierre
-    useEffect(() => {
-        const timer = setTimeout(onClose, 4000);
-        return () => clearTimeout(timer);
-    }, [notification, onClose]);
-
-    const styles = {
-        success: 'bg-emerald-950/90 border-emerald-500 text-emerald-100',
-        error: 'bg-red-950/90 border-red-500 text-red-100',
-        warning: 'bg-amber-950/90 border-amber-500 text-amber-100',
-    };
-    const icons = {
-        success: <CheckCircle className="text-emerald-500" size={20} />,
-        error: <AlertTriangle className="text-red-500" size={20} />,
-        warning: <Info className="text-amber-500" size={20} />
-    };
-
+    useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [notification, onClose]);
+    const styles = { success: 'bg-emerald-950/90 border-emerald-500 text-emerald-100', error: 'bg-red-950/90 border-red-500 text-red-100', warning: 'bg-amber-950/90 border-amber-500 text-amber-100' };
+    const icons = { success: <CheckCircle className="text-emerald-500" size={20} />, error: <AlertTriangle className="text-red-500" size={20} />, warning: <Info className="text-amber-500" size={20} /> };
     return (
         <div className={`fixed top-6 right-6 z-[60] p-4 rounded-xl border shadow-2xl backdrop-blur-md animate-in slide-in-from-right-4 fade-in duration-300 max-w-sm w-full flex items-start gap-3 ${styles[notification.type]}`}>
             <div className="shrink-0 mt-0.5">{icons[notification.type]}</div>
-            <div className="flex-1">
-                <h4 className="font-bold text-sm uppercase tracking-wide">{notification.title}</h4>
-                <p className="text-xs opacity-90 mt-1">{notification.message}</p>
-            </div>
+            <div className="flex-1"><h4 className="font-bold text-sm uppercase tracking-wide">{notification.title}</h4><p className="text-xs opacity-90 mt-1">{notification.message}</p></div>
             <button onClick={onClose} className="opacity-50 hover:opacity-100 transition-opacity"><X size={16}/></button>
         </div>
     );
@@ -181,12 +162,8 @@ function ConfirmModal({ isOpen, title, message, onConfirm, onCancel }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-slate-900 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-sm w-full scale-100 animate-in zoom-in-95 duration-200">
-                <h3 className="text-lg font-bold text-white mb-2">{title}</h3>
-                <p className="text-slate-400 text-sm mb-6 leading-relaxed">{message}</p>
-                <div className="flex gap-3">
-                    <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl text-slate-400 font-bold text-xs hover:bg-white/5 transition-colors">CANCELAR</button>
-                    <button onClick={onConfirm} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-xs shadow-lg">CONFIRMAR</button>
-                </div>
+                <h3 className="text-lg font-bold text-white mb-2">{title}</h3><p className="text-slate-400 text-sm mb-6 leading-relaxed">{message}</p>
+                <div className="flex gap-3"><button onClick={onCancel} className="flex-1 py-2.5 rounded-xl text-slate-400 font-bold text-xs hover:bg-white/5 transition-colors">CANCELAR</button><button onClick={onConfirm} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-xs shadow-lg">CONFIRMAR</button></div>
             </div>
         </div>
     );
@@ -206,13 +183,11 @@ function Landing({ onSelectTV, onSelectAdmin }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 w-full max-w-lg mx-auto">
           <button onClick={onSelectTV} className="group relative flex flex-col items-center p-8 bg-slate-900/50 hover:bg-slate-800/80 rounded-3xl border border-white/5 hover:border-indigo-500/50 transition-all duration-500 hover:-translate-y-2 backdrop-blur-md">
             <div className="absolute -top-3 -right-3 bg-emerald-500 text-white text-[10px] font-bold px-2 py-1 rounded-full animate-pulse shadow-lg">/LIVE</div>
-            <Tv className="w-12 h-12 mb-6 text-slate-300 group-hover:text-white transition-colors" />
-            <span className="text-2xl font-bold text-white">Modo TV</span>
+            <Tv className="w-12 h-12 mb-6 text-slate-300 group-hover:text-white transition-colors" /><span className="text-2xl font-bold text-white">Modo TV</span>
           </button>
           <button onClick={onSelectAdmin} className="group relative flex flex-col items-center p-8 bg-slate-900/50 hover:bg-slate-800/80 rounded-3xl border border-white/5 hover:border-indigo-500/50 transition-all duration-500 hover:-translate-y-2 backdrop-blur-md">
             <div className="absolute -top-3 -right-3 bg-indigo-500 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg">/ADMIN</div>
-            <Settings className="w-12 h-12 mb-6 text-slate-300 group-hover:text-white transition-colors" />
-            <span className="text-2xl font-bold text-white">Admin</span>
+            <Settings className="w-12 h-12 mb-6 text-slate-300 group-hover:text-white transition-colors" /><span className="text-2xl font-bold text-white">Admin</span>
           </button>
         </div>
       </div>
@@ -223,11 +198,7 @@ function Landing({ onSelectTV, onSelectAdmin }) {
 function Login({ onValidate, onLogin, onBack }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (onValidate(password)) onLogin();
-    else { setError(true); setPassword(''); }
-  };
+  const handleSubmit = (e) => { e.preventDefault(); if (onValidate(password)) onLogin(); else { setError(true); setPassword(''); } };
   return (
     <div className="flex items-center justify-center h-full bg-black/50 backdrop-blur-sm p-4 overflow-y-auto custom-scrollbar">
       <div className="w-full max-w-md bg-slate-900/90 border border-white/10 rounded-3xl shadow-2xl p-8">
@@ -254,259 +225,201 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   const [endDate, setEndDate] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [newPass, setNewPass] = useState('');
-  const [draggedItemIndex, setDraggedItemIndex] = useState(null);
   
-  // UI State
+  // DRAG AND DROP: Estado Local para manipulación visual suave
+  const [sortedPlaylist, setSortedPlaylist] = useState([]);
+  const [dragItemIndex, setDragItemIndex] = useState(null); // Índice del elemento arrastrado
+  
   const [notification, setNotification] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
-
   const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
-
   const showToast = (title, message, type = 'success') => setNotification({ title, message, type });
+
+  // Sincronizar estado local con DB solo si no estamos arrastrando
+  useEffect(() => {
+    if (dragItemIndex === null) {
+        setSortedPlaylist(playlist);
+    }
+  }, [playlist, dragItemIndex]);
 
   const handleSave = async (e) => {
     e.preventDefault();
     const ytId = getYouTubeId(newUrl);
-    if (!ytId) {
-        showToast("URL Inválida", "El enlace no corresponde a un video de YouTube válido.", "error");
-        return;
-    }
+    if (!ytId) return showToast("URL Inválida", "Enlace de YouTube no válido.", "error");
 
-    // --- VALIDACIONES ---
     const isDuplicateId = playlist.some(p => p.youtubeId === ytId && p.id !== editingId);
-    if (isDuplicateId) {
-        showToast("Video Duplicado", "Este video ya existe en la lista. Utiliza el botón 'Duplicar' si deseas repetirlo.", "warning");
-        return;
-    }
+    if (isDuplicateId) return showToast("Duplicado", "Este video ya existe. Usa 'Duplicar'.", "warning");
     const isDuplicateTitle = playlist.some(p => p.title.toLowerCase() === newTitle.trim().toLowerCase() && p.id !== editingId);
-    if (isDuplicateTitle) {
-        showToast("Título Repetido", "Ya existe un video con este título. Usa un nombre único.", "warning");
-        return;
-    }
+    if (isDuplicateTitle) return showToast("Título Repetido", "Usa un nombre único.", "warning");
 
     try {
       const payload = {
-        youtubeId: ytId,
-        title: newTitle || `Video de YouTube`,
+        youtubeId: ytId, title: newTitle || `Video de YouTube`,
         visible: editingId ? (playlist.find(p => p.id === editingId)?.visible ?? true) : true,
         startDate: (scheduleMode === 'now') ? getTodayString() : (startDate || getTodayString()),
         endDate: endDate || null
       };
-
-      if (editingId) {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', editingId), payload);
-        showToast("Actualizado", "El video se ha modificado correctamente.");
-        resetForm();
-      } else {
-        payload.order = playlist.length;
-        payload.createdAt = new Date().toISOString();
-        await addDoc(playlistRef, payload);
-        showToast("Video Creado", "Se ha añadido el video a la lista.");
-        resetForm();
-      }
-    } catch (err) { showToast("Error", "No se pudo guardar en la base de datos.", "error"); }
+      if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', editingId), payload); showToast("Actualizado", "Video modificado."); resetForm(); } 
+      else { payload.order = playlist.length; payload.createdAt = new Date().toISOString(); await addDoc(playlistRef, payload); showToast("Creado", "Nuevo video añadido."); resetForm(); }
+    } catch (err) { showToast("Error", "No se pudo guardar.", "error"); }
   };
 
   const promptDuplicate = (item) => {
-      setConfirmDialog({
-          isOpen: true,
-          title: "Duplicar Video",
-          message: `¿Quieres crear una copia de "${item.title}" al final de la lista?`,
-          onConfirm: () => handleDuplicate(item)
-      });
+      setConfirmDialog({ isOpen: true, title: "Duplicar Video", message: `¿Crear copia de "${item.title}"?`, onConfirm: () => handleDuplicate(item) });
   };
 
   const handleDuplicate = async (item) => {
-      try {
-          const payload = {
-              youtubeId: item.youtubeId,
-              title: `${item.title} (Copia)`,
-              visible: item.visible,
-              startDate: item.startDate || null,
-              endDate: item.endDate || null,
-              order: playlist.length, 
-              createdAt: new Date().toISOString()
-          };
-          await addDoc(playlistRef, payload);
-          showToast("Duplicado", "Se ha creado una copia del video.");
-      } catch (e) { showToast("Error", "Falló la duplicación.", "error"); }
+      try { await addDoc(playlistRef, { youtubeId: item.youtubeId, title: `${item.title} (Copia)`, visible: item.visible, startDate: item.startDate || null, endDate: item.endDate || null, order: playlist.length, createdAt: new Date().toISOString() }); showToast("Duplicado", "Copia creada."); } 
+      catch (e) { showToast("Error", "Error al duplicar.", "error"); }
       setConfirmDialog({ ...confirmDialog, isOpen: false });
   };
 
   const startEditing = (item) => {
-    setEditingId(item.id);
-    setNewTitle(item.title);
-    setNewUrl(`https://youtu.be/${item.youtubeId}`);
-    setStartDate(item.startDate || '');
-    setEndDate(item.endDate || '');
-    const today = getTodayString();
-    setScheduleMode(item.startDate && item.startDate > today ? 'schedule' : 'now');
+    setEditingId(item.id); setNewTitle(item.title); setNewUrl(`https://youtu.be/${item.youtubeId}`);
+    setStartDate(item.startDate || ''); setEndDate(item.endDate || '');
+    setScheduleMode(item.startDate && item.startDate > getTodayString() ? 'schedule' : 'now');
   };
 
-  const resetForm = () => {
-    setEditingId(null); setNewUrl(''); setNewTitle(''); setStartDate(''); setEndDate(''); setScheduleMode('now');
-  };
-
-  const handleChangePass = async (e) => {
-      e.preventDefault();
-      if (!newPass) return;
-      if (await onUpdatePassword(newPass)) {
-          showToast("Contraseña Actualizada", "La nueva clave se ha guardado.");
-          setNewPass('');
-      } else showToast("Error", "No se pudo cambiar la clave.", "error");
-  };
-
-  const promptDelete = (id) => {
-      setConfirmDialog({
-          isOpen: true,
-          title: "Eliminar Video",
-          message: "¿Estás seguro de que deseas eliminar este video permanentemente? Esta acción no se puede deshacer.",
-          onConfirm: () => deleteItem(id)
-      });
-  };
-
-  const deleteItem = async (id) => {
-      try {
-          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id));
-          if(editingId === id) resetForm();
-          showToast("Eliminado", "El video ha sido borrado de la lista.");
-      } catch(e) { showToast("Error", "No se pudo eliminar el elemento.", "error"); }
-      setConfirmDialog({ ...confirmDialog, isOpen: false });
-  };
-
+  const resetForm = () => { setEditingId(null); setNewUrl(''); setNewTitle(''); setStartDate(''); setEndDate(''); setScheduleMode('now'); };
+  const handleChangePass = async (e) => { e.preventDefault(); if (!newPass) return; if (await onUpdatePassword(newPass)) { showToast("Clave Actualizada", "Guardado."); setNewPass(''); } else showToast("Error", "Error al cambiar clave.", "error"); };
+  const promptDelete = (id) => { setConfirmDialog({ isOpen: true, title: "Eliminar", message: "¿Borrar permanentemente?", onConfirm: () => deleteItem(id) }); };
+  const deleteItem = async (id) => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id)); if(editingId === id) resetForm(); showToast("Eliminado", "Video borrado."); } catch(e) { showToast("Error", "Error al borrar.", "error"); } setConfirmDialog({ ...confirmDialog, isOpen: false }); };
   const toggleVisibility = async (id, status) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id), { visible: !status });
   
-  const updatePlaylistOrder = async (oldIndex, newIndex) => {
-    const newPlaylist = [...playlist];
-    const [movedItem] = newPlaylist.splice(oldIndex, 1);
-    newPlaylist.splice(newIndex, 0, movedItem);
-    const batch = writeBatch(db);
-    newPlaylist.forEach((item, idx) => {
-        batch.update(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', item.id), { order: idx });
-    });
-    await batch.commit();
+  // --- DRAG HANDLERS ROBUSTOS (Estilo Sortable) ---
+  
+  const onDragStart = (e, index) => {
+    setDragItemIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    // Eliminamos la imagen fantasma por defecto si queremos personalizar (opcional), 
+    // pero aquí usaremos el comportamiento nativo que es más estable.
   };
 
-  const handleDragStart = (e, index) => { setDraggedItemIndex(index); e.dataTransfer.effectAllowed = "move"; };
-  const handleDragOver = (e, index) => { e.preventDefault(); if (draggedItemIndex === index) return; };
-  const handleDrop = (e, index) => { e.preventDefault(); if (draggedItemIndex === null || draggedItemIndex === index) return; updatePlaylistOrder(draggedItemIndex, index); setDraggedItemIndex(null); };
+  const onDragEnter = (e, index) => {
+    // Solo reordenamos si estamos sobre un item diferente
+    if (dragItemIndex === null || dragItemIndex === index) return;
+
+    // Copia local para manipular
+    const newList = [...sortedPlaylist];
+    const item = newList[dragItemIndex];
+    
+    // Eliminamos de la posición vieja
+    newList.splice(dragItemIndex, 1);
+    // Insertamos en la nueva
+    newList.splice(index, 0, item);
+    
+    // Actualizamos visualmente
+    setDragItemIndex(index);
+    setSortedPlaylist(newList);
+  };
+
+  const onDragEnd = async () => {
+    const finalIndex = dragItemIndex;
+    setDragItemIndex(null); // Fin del drag visual
+    
+    if (finalIndex === null) return;
+
+    // Guardar en Firebase el orden final
+    const batch = writeBatch(db);
+    sortedPlaylist.forEach((item, idx) => {
+        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', item.id);
+        batch.update(ref, { order: idx });
+    });
+    
+    try {
+        await batch.commit();
+        // showToast("Orden Guardado", "La lista se ha reordenado.", "success"); // Opcional
+    } catch(e) {
+        showToast("Error", "No se pudo guardar el orden.", "error");
+        setSortedPlaylist(playlist); // Revertir si falla
+    }
+  };
 
   return (
     <div className="flex flex-col h-full max-w-7xl mx-auto overflow-hidden">
-      {/* Sistema de Alertas */}
       <Toast notification={notification} onClose={() => setNotification(null)} />
-      <ConfirmModal 
-         isOpen={confirmDialog.isOpen} 
-         title={confirmDialog.title} 
-         message={confirmDialog.message} 
-         onConfirm={confirmDialog.onConfirm} 
-         onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} 
-      />
+      <ConfirmModal isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} />
 
-      {/* Header Fijo */}
       <header className="shrink-0 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-900/60 p-4 m-4 md:mx-8 rounded-3xl border border-white/5 backdrop-blur-md shadow-2xl z-40">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-indigo-500/20 rounded-xl"><List className="text-indigo-400 w-6 h-6" /></div>
-          <div><h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">Consola /dashboard</h1><p className="text-slate-400 text-[10px] font-mono uppercase tracking-widest">Conexión: <span className="animate-pulse text-emerald-400 font-bold">Live</span></p></div>
-        </div>
+        <div className="flex items-center gap-4"><div className="p-3 bg-indigo-500/20 rounded-xl"><List className="text-indigo-400 w-6 h-6" /></div><div><h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">Consola /dashboard</h1><p className="text-slate-400 text-[10px] font-mono uppercase tracking-widest">Conexión: <span className="animate-pulse text-emerald-400 font-bold">Live</span></p></div></div>
         <div className="flex items-center gap-3">
-          <div className="flex bg-slate-800/50 p-1 rounded-xl border border-white/5">
-            <button onClick={() => setTab('content')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'content' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>CONTENIDO</button>
-            <button onClick={() => setTab('settings')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'settings' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>SEGURIDAD</button>
-          </div>
+          <div className="flex bg-slate-800/50 p-1 rounded-xl border border-white/5"><button onClick={() => setTab('content')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'content' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>CONTENIDO</button><button onClick={() => setTab('settings')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'settings' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>SEGURIDAD</button></div>
           <div className="w-px h-8 bg-white/10 mx-1 hidden md:block"></div>
           <button onClick={onGoToTV} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white shadow-lg transition-all active:scale-95"><MonitorPlay size={16} /> LIVE</button>
           <button onClick={onLogout} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl border border-white/5 transition-colors"><LogOut size={18} /></button>
         </div>
       </header>
 
-      {/* Contenedor Principal */}
       <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
         {tab === 'settings' ? (
           <div className="h-full overflow-y-auto custom-scrollbar">
-            <div className="max-w-md mx-auto bg-slate-900/80 rounded-3xl p-8 border border-white/10 shadow-2xl backdrop-blur-xl mt-8">
-                <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Shield className="text-indigo-400"/> Seguridad</h3>
-                <p className="text-slate-400 text-sm mb-6">Cambia la contraseña de acceso al panel.</p>
-                <form onSubmit={handleChangePass} className="space-y-4">
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Nueva Clave</label>
-                        <div className="relative">
-                            <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                            <input type="text" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="Ej: admin2026" className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" />
-                        </div>
-                    </div>
-                    <button disabled={!newPass} type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 rounded-xl font-bold shadow-lg shadow-emerald-900/10 transition-all">ACTUALIZAR CLAVE</button>
-                </form>
-            </div>
+            <div className="max-w-md mx-auto bg-slate-900/80 rounded-3xl p-8 border border-white/10 shadow-2xl backdrop-blur-xl mt-8"><h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Shield className="text-indigo-400"/> Seguridad</h3><p className="text-slate-400 text-sm mb-6">Cambia la contraseña de acceso al panel.</p><form onSubmit={handleChangePass} className="space-y-4"><div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Nueva Clave</label><div className="relative"><Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} /><input type="text" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="Ej: admin2026" className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" /></div></div><button disabled={!newPass} type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 rounded-xl font-bold shadow-lg shadow-emerald-900/10 transition-all">ACTUALIZAR CLAVE</button></form></div>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full">
             <div className="lg:col-span-1 h-full overflow-y-auto pr-2 custom-scrollbar">
               <div className={`bg-slate-900/80 rounded-3xl p-6 border transition-all shadow-2xl space-y-5 backdrop-blur-xl mb-4 ${editingId ? 'border-indigo-500 ring-1 ring-indigo-500/50' : 'border-white/10'}`}>
-                <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-bold flex items-center gap-2 text-white">
-                        {editingId ? <Pencil className="text-indigo-400" size={20} /> : <Plus className="text-indigo-500" size={20} />} 
-                        {editingId ? 'Editar Video' : 'Nuevo Video'}
-                    </h3>
-                    {editingId && <button onClick={resetForm} className="text-[10px] flex items-center gap-1 text-slate-400 hover:text-white bg-slate-800 px-2 py-1 rounded-lg transition-colors"><X size={14} /> Cancelar</button>}
-                </div>
+                <div className="flex justify-between items-center"><h3 className="text-lg font-bold flex items-center gap-2 text-white">{editingId ? <Pencil className="text-indigo-400" size={20} /> : <Plus className="text-indigo-500" size={20} />} {editingId ? 'Editar Video' : 'Nuevo Video'}</h3>{editingId && <button onClick={resetForm} className="text-[10px] flex items-center gap-1 text-slate-400 hover:text-white bg-slate-800 px-2 py-1 rounded-lg transition-colors"><X size={14} /> Cancelar</button>}</div>
                 <form onSubmit={handleSave} className="space-y-4">
-                  <div className="flex p-1 bg-slate-950 rounded-xl border border-slate-800">
-                    <button type="button" onClick={() => setScheduleMode('now')} className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${scheduleMode === 'now' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>PUBLICAR YA</button>
-                    <button type="button" onClick={() => setScheduleMode('schedule')} className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${scheduleMode === 'schedule' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>PROGRAMAR</button>
-                  </div>
+                  <div className="flex p-1 bg-slate-950 rounded-xl border border-slate-800"><button type="button" onClick={() => setScheduleMode('now')} className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${scheduleMode === 'now' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>PUBLICAR YA</button><button type="button" onClick={() => setScheduleMode('schedule')} className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${scheduleMode === 'schedule' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>PROGRAMAR</button></div>
                   <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Título</label><input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Ej: Promo Verano" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none" /></div>
                   <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">URL YouTube</label><input type="text" value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://youtube.com/..." className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none" /></div>
-                  <div className="grid grid-cols-2 gap-3">
-                    {scheduleMode === 'schedule' && (
-                      <div className="space-y-1 col-span-2 sm:col-span-1"><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Inicio</label><div className="relative"><Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500 pointer-events-none" size={14} /><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-2 py-2.5 text-[10px] focus:border-indigo-500 outline-none text-white scheme-dark" /></div></div>
-                    )}
-                    <div className={`space-y-1 ${scheduleMode === 'now' ? 'col-span-2' : 'col-span-2 sm:col-span-1'}`}><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Fin (Opcional)</label><div className="relative"><Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={14} /><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-2 py-2.5 text-[10px] focus:border-indigo-500 outline-none text-white scheme-dark" /></div></div>
-                  </div>
+                  <div className="grid grid-cols-2 gap-3">{scheduleMode === 'schedule' && (<div className="space-y-1 col-span-2 sm:col-span-1"><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Inicio</label><div className="relative"><Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500 pointer-events-none" size={14} /><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-2 py-2.5 text-[10px] focus:border-indigo-500 outline-none text-white scheme-dark" /></div></div>)}<div className={`space-y-1 ${scheduleMode === 'now' ? 'col-span-2' : 'col-span-2 sm:col-span-1'}`}><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Fin (Opcional)</label><div className="relative"><Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={14} /><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-2 py-2.5 text-[10px] focus:border-indigo-500 outline-none text-white scheme-dark" /></div></div></div>
                   <button disabled={!newUrl} type="submit" className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all mt-2 active:scale-95 ${editingId ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50'}`}>{editingId ? 'GUARDAR CAMBIOS' : 'AÑADIR A PLAYLIST'}</button>
                 </form>
               </div>
             </div>
 
             <div className="lg:col-span-2 h-full overflow-y-auto pr-2 custom-scrollbar pb-20">
-              <div className="flex justify-between items-center mb-2 px-2 sticky top-0 bg-slate-950/90 py-2 z-10 backdrop-blur">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Playlist Activa ({playlist.length})</h3>
-                <span className="text-[8px] text-slate-600 italic">TIP: Arrastra para reordenar</span>
-              </div>
+              <div className="flex justify-between items-center mb-2 px-2 sticky top-0 bg-slate-950/90 py-2 z-10 backdrop-blur"><h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Playlist Activa ({sortedPlaylist.length})</h3><span className="text-[8px] text-slate-600 italic">TIP: Arrastra para reordenar</span></div>
               <div className="space-y-4">
-                {playlist.map((item, index) => {
+                {sortedPlaylist.map((item, index) => {
                   const isEditing = editingId === item.id;
                   const now = getTodayString();
                   const isScheduled = item.startDate && item.startDate > now;
                   const isExpired = item.endDate && item.endDate < now;
+                  const isDraggingThis = dragItemIndex === index;
+
                   return (
                     <div 
                       key={item.id} 
                       draggable
-                      onDragStart={(e) => handleDragStart(e, index)}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={(e) => handleDrop(e, index)}
-                      className={`flex items-center gap-3 p-3 bg-slate-900/60 rounded-2xl border transition-all cursor-move group ${isEditing ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/5 opacity-90 hover:opacity-100 hover:border-white/10'}`}
+                      onDragStart={(e) => onDragStart(e, index)}
+                      onDragEnter={(e) => onDragEnter(e, index)}
+                      onDragEnd={onDragEnd}
+                      onDragOver={(e) => e.preventDefault()} // Necesario para permitir Drop
+                      className={`relative transition-all duration-300 ease-out`} // Animación suave
                     >
-                      <div className="text-slate-600 group-hover:text-slate-400 transition-colors cursor-grab active:cursor-grabbing"><GripVertical size={20} /></div>
-                      <div className="w-20 md:w-28 aspect-video bg-black rounded-xl overflow-hidden flex-shrink-0 relative">
-                          <img src={`https://img.youtube.com/vi/${item.youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover opacity-80" alt="miniatura" />
-                          {isExpired && <div className="absolute inset-0 bg-red-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-red-600 px-2 py-0.5 rounded uppercase">Fin</span></div>}
-                          {isScheduled && <div className="absolute inset-0 bg-indigo-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-indigo-600 px-2 py-0.5 rounded uppercase">Pronto</span></div>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-white truncate text-xs md:text-sm leading-tight">{item.title}</h4>
-                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
-                          {item.startDate && <span className="text-[8px] flex items-center gap-1 text-slate-400"><Calendar size={8} /> {item.startDate}</span>}
-                          {item.endDate && <span className="text-[8px] flex items-center gap-1 text-emerald-400"><Clock size={8} /> {item.endDate}</span>}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => promptDuplicate(item)} className="p-2 rounded-lg transition-colors hover:bg-emerald-600/20 text-slate-400 hover:text-emerald-400" title="Duplicar"><Copy size={14} /></button>
-                        <button onClick={() => startEditing(item)} className={`p-2 rounded-lg transition-colors ${isEditing ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-600/20 text-slate-400 hover:text-white'}`} title="Editar"><Pencil size={14} /></button>
-                        <button onClick={() => toggleVisibility(item.id, item.visible)} className={`p-2 rounded-lg transition-colors ${item.visible ? 'hover:bg-slate-700 text-slate-400' : 'bg-red-500/10 text-red-500'}`}>{item.visible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
-                        <button onClick={() => promptDelete(item.id)} className="p-2 hover:bg-red-600/20 text-slate-500 hover:text-red-500 rounded-lg ml-1 transition-colors"><Trash2 size={14} /></button>
-                      </div>
+                        {/* Si es el elemento que se está arrastrando, mostramos el "Placehoder" 
+                          PERO mantenemos el elemento original en el DOM para que el drag funcione.
+                        */}
+                        {isDraggingThis ? (
+                          <div className="h-24 border-2 border-dashed border-indigo-500/50 rounded-xl bg-indigo-500/10 flex items-center justify-center animate-pulse">
+                              <span className="text-indigo-400 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2"><ArrowDown size={14}/> SOLTAR AQUÍ <ArrowUp size={14}/></span>
+                          </div>
+                        ) : (
+                          <div className={`flex items-center gap-3 p-3 bg-slate-900/60 rounded-2xl border transition-all cursor-move group ${isEditing ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/5 opacity-90 hover:opacity-100 hover:border-white/10'}`}>
+                              <div className="text-slate-600 group-hover:text-slate-400 transition-colors cursor-grab active:cursor-grabbing"><GripVertical size={20} /></div>
+                              <div className="w-20 md:w-28 aspect-video bg-black rounded-xl overflow-hidden flex-shrink-0 relative">
+                                  <img src={`https://img.youtube.com/vi/${item.youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover opacity-80" alt="miniatura" />
+                                  {isExpired && <div className="absolute inset-0 bg-red-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-red-600 px-2 py-0.5 rounded uppercase">Fin</span></div>}
+                                  {isScheduled && <div className="absolute inset-0 bg-indigo-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-indigo-600 px-2 py-0.5 rounded uppercase">Pronto</span></div>}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-bold text-white truncate text-xs md:text-sm leading-tight">{item.title}</h4>
+                                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                                  {item.startDate && <span className="text-[8px] flex items-center gap-1 text-slate-400"><Calendar size={8} /> {item.startDate}</span>}
+                                  {item.endDate && <span className="text-[8px] flex items-center gap-1 text-emerald-400"><Clock size={8} /> {item.endDate}</span>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => promptDuplicate(item)} className="p-2 rounded-lg transition-colors hover:bg-emerald-600/20 text-slate-400 hover:text-emerald-400" title="Duplicar"><Copy size={14} /></button>
+                                <button onClick={() => startEditing(item)} className={`p-2 rounded-lg transition-colors ${isEditing ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-600/20 text-slate-400 hover:text-white'}`} title="Editar"><Pencil size={14} /></button>
+                                <button onClick={() => toggleVisibility(item.id, item.visible)} className={`p-2 rounded-lg transition-colors ${item.visible ? 'hover:bg-slate-700 text-slate-400' : 'bg-red-500/10 text-red-500'}`}>{item.visible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
+                                <button onClick={() => promptDelete(item.id)} className="p-2 hover:bg-red-600/20 text-slate-500 hover:text-red-500 rounded-lg ml-1 transition-colors"><Trash2 size={14} /></button>
+                              </div>
+                          </div>
+                        )}
                     </div>
                   );
                 })}
