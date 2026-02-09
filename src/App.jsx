@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube, GripVertical, Copy, Info } from 'lucide-react';
+import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube, GripVertical, Copy, Info, Layers } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
@@ -146,7 +146,6 @@ export default function App() {
 
 function Toast({ notification, onClose }) {
     if (!notification) return null;
-    // Se mantiene en 2000ms (2 segundos) para alertas rápidas
     useEffect(() => { const t = setTimeout(onClose, 2000); return () => clearTimeout(t); }, [notification, onClose]);
     const styles = { success: 'bg-emerald-950/90 border-emerald-500 text-emerald-100', error: 'bg-red-950/90 border-red-500 text-red-100', warning: 'bg-amber-950/90 border-amber-500 text-amber-100' };
     const icons = { success: <CheckCircle className="text-emerald-500" size={20} />, error: <AlertTriangle className="text-red-500" size={20} />, warning: <Info className="text-amber-500" size={20} /> };
@@ -230,7 +229,7 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   
   // DRAG AND DROP: Estado Local para manipulación visual suave
   const [sortedPlaylist, setSortedPlaylist] = useState([]);
-  const [dragItemIndex, setDragItemIndex] = useState(null); // Índice del elemento arrastrado
+  const [dragItemIndex, setDragItemIndex] = useState(null); 
   
   const [notification, setNotification] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
@@ -249,30 +248,87 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
     const ytId = getYouTubeId(newUrl);
     if (!ytId) return showToast("URL Inválida", "Enlace de YouTube no válido.", "error");
 
-    const isDuplicateId = playlist.some(p => p.youtubeId === ytId && p.id !== editingId);
-    if (isDuplicateId) return showToast("Duplicado", "Este video ya existe. Usa 'Duplicar'.", "warning");
-    const isDuplicateTitle = playlist.some(p => p.title.toLowerCase() === newTitle.trim().toLowerCase() && p.id !== editingId);
-    if (isDuplicateTitle) return showToast("Título Repetido", "Usa un nombre único.", "warning");
+    // Lógica para detectar si es un "Clon" (Campaña compartida)
+    const isEditingClone = editingId && playlist.some(p => p.id !== editingId && p.youtubeId === ytId);
+
+    // Si CREAMOS uno nuevo, validamos duplicados (para evitar errores accidentales)
+    // Pero permitimos duplicar explicitamente via el botón de clonar.
+    // Aquí, si intentan añadir manualmente uno que ya existe, avisamos.
+    if (!editingId) {
+        const isDuplicateId = playlist.some(p => p.youtubeId === ytId);
+        if (isDuplicateId) return showToast("Ya existe", "Este video ya está en lista. Usa el botón 'Clonar' para repetirlo.", "warning");
+    }
 
     try {
       const payload = {
         youtubeId: ytId, title: newTitle || `Video de YouTube`,
+        // Mantenemos la visibilidad original si estamos editando, o true si es nuevo
         visible: editingId ? (playlist.find(p => p.id === editingId)?.visible ?? true) : true,
         startDate: (scheduleMode === 'now') ? getTodayString() : (startDate || getTodayString()),
         endDate: endDate || null
       };
-      if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', editingId), payload); showToast("Actualizado", "Video modificado."); resetForm(); } 
-      else { payload.order = playlist.length; payload.createdAt = new Date().toISOString(); await addDoc(playlistRef, payload); showToast("Creado", "Nuevo video añadido."); resetForm(); }
-    } catch (err) { showToast("Error", "No se pudo guardar.", "error"); }
+
+      if (editingId) {
+        // --- EDICIÓN SINCRONIZADA ---
+        // Buscamos el youtubeId ORIGINAL del elemento que estamos editando (antes de que el usuario lo cambie en el form)
+        const originalItem = playlist.find(p => p.id === editingId);
+        const originalYtId = originalItem?.youtubeId;
+
+        // Si el usuario cambia el ID de YouTube, solo editamos ESTE elemento (rompe el enlace)
+        // Pero si mantiene el mismo ID, actualizamos TODOS los clones (Título, fechas, etc)
+        const batch = writeBatch(db);
+        
+        if (originalYtId === ytId) {
+            // Es el mismo video, actualizamos TODOS los clones para mantener la campaña sincronizada
+            const clones = playlist.filter(p => p.youtubeId === originalYtId);
+            clones.forEach(clone => {
+                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id);
+                 batch.update(docRef, payload);
+            });
+            await batch.commit();
+            showToast("Campaña Actualizada", `Se actualizaron ${clones.length} instancias del video.`);
+        } else {
+            // Cambió el video totalmente, solo actualizamos este doc
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', editingId), payload);
+            showToast("Video Actualizado", "Se modificó el video individualmente.");
+        }
+        resetForm();
+      } else {
+        // --- NUEVO VIDEO ---
+        payload.order = playlist.length; 
+        payload.createdAt = new Date().toISOString(); 
+        await addDoc(playlistRef, payload); 
+        showToast("Creado", "Nuevo video añadido."); 
+        resetForm(); 
+      }
+    } catch (err) { console.error(err); showToast("Error", "No se pudo guardar.", "error"); }
   };
 
   const promptDuplicate = (item) => {
-      setConfirmDialog({ isOpen: true, title: "Duplicar Video", message: `¿Crear copia de "${item.title}"?`, onConfirm: () => handleDuplicate(item) });
+      // Mensaje actualizado para reflejar "Clonar"
+      setConfirmDialog({ 
+          isOpen: true, 
+          title: "Clonar Video", 
+          message: `Esto creará una nueva instancia de "${item.title}". Si editas o borras una, afectará a todas las copias.`, 
+          onConfirm: () => handleDuplicate(item) 
+      });
   };
 
   const handleDuplicate = async (item) => {
-      try { await addDoc(playlistRef, { youtubeId: item.youtubeId, title: `${item.title} (Copia)`, visible: item.visible, startDate: item.startDate || null, endDate: item.endDate || null, order: playlist.length, createdAt: new Date().toISOString() }); showToast("Duplicado", "Copia creada."); } 
-      catch (e) { showToast("Error", "Error al duplicar.", "error"); }
+      try { 
+          // Clonamos EXACTAMENTE los mismos datos para mantener el enlace de "youtubeId"
+          await addDoc(playlistRef, { 
+              youtubeId: item.youtubeId, 
+              title: item.title, // Mismo título para que parezca el mismo objeto
+              visible: item.visible, 
+              startDate: item.startDate, 
+              endDate: item.endDate, 
+              order: playlist.length, 
+              createdAt: new Date().toISOString() 
+          }); 
+          showToast("Clonado", "Se añadió una copia al final de la lista."); 
+      } 
+      catch (e) { showToast("Error", "Error al clonar.", "error"); }
       setConfirmDialog({ ...confirmDialog, isOpen: false });
   };
 
@@ -283,18 +339,58 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   };
 
   const resetForm = () => { setEditingId(null); setNewUrl(''); setNewTitle(''); setStartDate(''); setEndDate(''); setScheduleMode('now'); };
+  
   const handleChangePass = async (e) => { e.preventDefault(); if (!newPass) return; if (await onUpdatePassword(newPass)) { showToast("Clave Actualizada", "Guardado."); setNewPass(''); } else showToast("Error", "Error al cambiar clave.", "error"); };
-  const promptDelete = (id) => { setConfirmDialog({ isOpen: true, title: "Eliminar", message: "¿Borrar permanentemente?", onConfirm: () => deleteItem(id) }); };
-  const deleteItem = async (id) => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id)); if(editingId === id) resetForm(); showToast("Eliminado", "Video borrado."); } catch(e) { showToast("Error", "Error al borrar.", "error"); } setConfirmDialog({ ...confirmDialog, isOpen: false }); };
-  const toggleVisibility = async (id, status) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id), { visible: !status });
   
-  // --- DRAG HANDLERS ROBUSTOS (Estilo Sortable) ---
-  
-  const onDragStart = (e, index) => {
-    setDragItemIndex(index);
-    e.dataTransfer.effectAllowed = "move";
+  const promptDelete = (item) => { 
+      // Detectar si hay clones
+      const clonesCount = playlist.filter(p => p.youtubeId === item.youtubeId).length;
+      const msg = clonesCount > 1 
+        ? `Este video aparece ${clonesCount} veces. Se eliminarán TODAS las copias de la campaña.` 
+        : "¿Borrar permanentemente este video?";
+
+      setConfirmDialog({ 
+          isOpen: true, 
+          title: "Eliminar Campaña", 
+          message: msg, 
+          onConfirm: () => deleteCampaign(item) 
+      }); 
   };
 
+  const deleteCampaign = async (item) => { 
+      try { 
+          // BORRADO EN GRUPO: Busamos todos los items con el mismo youtubeId
+          const batch = writeBatch(db);
+          const clones = playlist.filter(p => p.youtubeId === item.youtubeId);
+          
+          clones.forEach(clone => {
+              const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id);
+              batch.delete(docRef);
+          });
+          
+          await batch.commit();
+
+          if(editingId && clones.some(c => c.id === editingId)) resetForm(); 
+          showToast("Campaña Eliminada", `Se eliminaron ${clones.length} videos de la lista.`); 
+      } catch(e) { showToast("Error", "Error al borrar.", "error"); } 
+      setConfirmDialog({ ...confirmDialog, isOpen: false }); 
+  };
+  
+  const toggleVisibility = async (item) => {
+      // Toggle visibility for ALL clones
+      const batch = writeBatch(db);
+      const clones = playlist.filter(p => p.youtubeId === item.youtubeId);
+      const newStatus = !item.visible;
+      
+      clones.forEach(clone => {
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id);
+          batch.update(docRef, { visible: newStatus });
+      });
+      await batch.commit();
+  };
+  
+  // --- DRAG HANDLERS ---
+  const onDragStart = (e, index) => { setDragItemIndex(index); e.dataTransfer.effectAllowed = "move"; };
   const onDragEnter = (e, index) => {
     if (dragItemIndex === null || dragItemIndex === index) return;
     const newList = [...sortedPlaylist];
@@ -304,17 +400,11 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
     setDragItemIndex(index);
     setSortedPlaylist(newList);
   };
-
   const onDragEnd = async () => {
-    const finalIndex = dragItemIndex;
-    setDragItemIndex(null); 
-    if (finalIndex === null) return;
+    const finalIndex = dragItemIndex; setDragItemIndex(null); if (finalIndex === null) return;
     const batch = writeBatch(db);
-    sortedPlaylist.forEach((item, idx) => {
-        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', item.id);
-        batch.update(ref, { order: idx });
-    });
-    try { await batch.commit(); } catch(e) { showToast("Error", "No se pudo guardar el orden.", "error"); setSortedPlaylist(playlist); }
+    sortedPlaylist.forEach((item, idx) => { const ref = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', item.id); batch.update(ref, { order: idx }); });
+    try { await batch.commit(); } catch(e) { showToast("Error", "Error orden.", "error"); setSortedPlaylist(playlist); }
   };
 
   return (
@@ -361,6 +451,9 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
                   const isScheduled = item.startDate && item.startDate > now;
                   const isExpired = item.endDate && item.endDate < now;
                   const isDraggingThis = dragItemIndex === index;
+                  // Detectar si es un clon (aparece más de una vez)
+                  const cloneCount = sortedPlaylist.filter(p => p.youtubeId === item.youtubeId).length;
+                  const isClone = cloneCount > 1;
 
                   return (
                     <div 
@@ -369,12 +462,9 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
                       onDragStart={(e) => onDragStart(e, index)}
                       onDragEnter={(e) => onDragEnter(e, index)}
                       onDragEnd={onDragEnd}
-                      onDragOver={(e) => e.preventDefault()} // Necesario para permitir Drop
-                      className={`relative transition-all duration-300 ease-out`} // Animación suave
+                      onDragOver={(e) => e.preventDefault()}
+                      className={`relative transition-all duration-300 ease-out`}
                     >
-                        {/* Si es el elemento que se está arrastrando, mostramos el "Placehoder" 
-                          PERO mantenemos el elemento original en el DOM para que el drag funcione.
-                        */}
                         {isDraggingThis ? (
                           <div className="h-24 border-2 border-dashed border-indigo-500/50 rounded-xl bg-indigo-500/10 flex items-center justify-center animate-pulse">
                               <span className="text-indigo-400 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2"><ArrowDown size={14}/> SOLTAR AQUÍ <ArrowUp size={14}/></span>
@@ -386,19 +476,20 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
                                   <img src={`https://img.youtube.com/vi/${item.youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover opacity-80" alt="miniatura" />
                                   {isExpired && <div className="absolute inset-0 bg-red-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-red-600 px-2 py-0.5 rounded uppercase">Fin</span></div>}
                                   {isScheduled && <div className="absolute inset-0 bg-indigo-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-indigo-600 px-2 py-0.5 rounded uppercase">Pronto</span></div>}
+                                  {isClone && <div className="absolute top-1 left-1 bg-blue-600/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 shadow-sm"><Layers size={8}/> x{cloneCount}</div>}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <h4 className="font-bold text-white truncate text-xs md:text-sm leading-tight">{item.title}</h4>
+                                <h4 className="font-bold text-white truncate text-xs md:text-sm leading-tight flex items-center gap-2">{item.title}</h4>
                                 <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
                                   {item.startDate && <span className="text-[8px] flex items-center gap-1 text-slate-400"><Calendar size={8} /> {item.startDate}</span>}
                                   {item.endDate && <span className="text-[8px] flex items-center gap-1 text-emerald-400"><Clock size={8} /> {item.endDate}</span>}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1">
-                                <button onClick={() => promptDuplicate(item)} className="p-2 rounded-lg transition-colors hover:bg-emerald-600/20 text-slate-400 hover:text-emerald-400" title="Duplicar"><Copy size={14} /></button>
-                                <button onClick={() => startEditing(item)} className={`p-2 rounded-lg transition-colors ${isEditing ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-600/20 text-slate-400 hover:text-white'}`} title="Editar"><Pencil size={14} /></button>
-                                <button onClick={() => toggleVisibility(item.id, item.visible)} className={`p-2 rounded-lg transition-colors ${item.visible ? 'hover:bg-slate-700 text-slate-400' : 'bg-red-500/10 text-red-500'}`}>{item.visible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
-                                <button onClick={() => promptDelete(item.id)} className="p-2 hover:bg-red-600/20 text-slate-500 hover:text-red-500 rounded-lg ml-1 transition-colors"><Trash2 size={14} /></button>
+                                <button onClick={() => promptDuplicate(item)} className="p-2 rounded-lg transition-colors hover:bg-emerald-600/20 text-slate-400 hover:text-emerald-400" title="Clonar Video"><Copy size={14} /></button>
+                                <button onClick={() => startEditing(item)} className={`p-2 rounded-lg transition-colors ${isEditing ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-600/20 text-slate-400 hover:text-white'}`} title="Editar Campaña"><Pencil size={14} /></button>
+                                <button onClick={() => toggleVisibility(item)} className={`p-2 rounded-lg transition-colors ${item.visible ? 'hover:bg-slate-700 text-slate-400' : 'bg-red-500/10 text-red-500'}`}>{item.visible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
+                                <button onClick={() => promptDelete(item)} className="p-2 hover:bg-red-600/20 text-slate-500 hover:text-red-500 rounded-lg ml-1 transition-colors"><Trash2 size={14} /></button>
                               </div>
                           </div>
                         )}
@@ -450,7 +541,6 @@ function TVMode({ playlist, onExit }) {
       const interval = setInterval(() => {
           if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
               const state = playerRef.current.getPlayerState();
-              // 2 = Paused, 5 = Video cued. If found, force play.
               if (state === 2 || state === 5) {
                   console.log("Watchdog: Forcing play");
                   playerRef.current.playVideo();
@@ -468,28 +558,15 @@ function TVMode({ playlist, onExit }) {
         playerRef.current = new window.YT.Player('yt-player', {
             height: '100%', width: '100%', videoId: currentVideo.youtubeId,
             playerVars: { 
-                'autoplay': 1, 
-                'mute': 1, 
-                'controls': 0, 
-                'rel': 0, 
-                'showinfo': 0, 
-                'modestbranding': 1, 
-                'vq': 'hd1080', 
-                'origin': window.location.origin,
-                'playsinline': 1 // Crucial for continuous playback in some browsers
+                'autoplay': 1, 'mute': 1, 'controls': 0, 'rel': 0, 'showinfo': 0, 'modestbranding': 1, 
+                'vq': 'hd1080', 'origin': window.location.origin, 'playsinline': 1 
             },
             events: {
                 'onReady': (e) => { e.target.playVideo(); setTimeout(() => { try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} }, 800); },
                 'onStateChange': (e) => { 
-                    if (e.data === window.YT.PlayerState.PLAYING) { 
-                        setIsPlaying(true); 
-                        try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} 
-                    } 
+                    if (e.data === window.YT.PlayerState.PLAYING) { setIsPlaying(true); try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} } 
                     if (e.data === window.YT.PlayerState.ENDED) handleNext();
-                    // Auto-Resume on Pause (Browser throttling countermeasure)
-                    if (e.data === window.YT.PlayerState.PAUSED) {
-                        e.target.playVideo();
-                    }
+                    if (e.data === window.YT.PlayerState.PAUSED) e.target.playVideo();
                 },
                 'onError': () => { setErrorMsg("Señal perdida. Saltando..."); setTimeout(handleNext, 3000); }
             }
