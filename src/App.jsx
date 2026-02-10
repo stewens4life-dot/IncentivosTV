@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube, GripVertical, Copy, Info, Layers } from 'lucide-react';
+import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube, GripVertical, Copy, Info, Layers, Activity, Edit3, Wifi, WifiOff, ExternalLink } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
@@ -41,16 +41,33 @@ try {
 }
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'tvincentivos-prod';
-
 // --- Utilerías ---
 const getYouTubeId = (url) => {
-  if (!url) return null;
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
+  try {
+    if (!url) return null;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  } catch (e) { return null; }
 };
 
 const getTodayString = () => new Date().toISOString().split('T')[0];
+
+// Generador de ID de dispositivo A PRUEBA DE FALLOS
+const getDeviceId = () => {
+  try {
+    let id = localStorage.getItem('tv_device_id');
+    if (!id) {
+      id = 'tv-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      localStorage.setItem('tv_device_id', id);
+    }
+    return id;
+  } catch (e) {
+    // Si localStorage falla (incógnito/bloqueado), usamos un ID temporal en memoria
+    console.warn("Acceso a LocalStorage bloqueado, usando ID temporal");
+    return 'tv-temp-' + Math.floor(Math.random() * 10000);
+  }
+};
 
 export default function App() {
   const [view, setView] = useState('landing');
@@ -58,7 +75,9 @@ export default function App() {
   const [dbPassword, setDbPassword] = useState(null);
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [initError, setInitError] = useState(null);
 
+  // Router simple y seguro
   useEffect(() => {
     try {
       const path = window.location.pathname;
@@ -67,44 +86,62 @@ export default function App() {
       } else if (path === '/dashboard' || path.endsWith('/dashboard')) {
         setView('login');
       }
-    } catch (e) { console.warn("Error ruta"); }
+    } catch (e) { console.warn("Error en router", e); }
   }, []);
 
+  // Navegación segura
   const navigateTo = (newView) => {
-    let path = '/';
-    if (newView === 'tv') path = '/live';
-    if (newView === 'login' || newView === 'admin') path = '/dashboard';
-    try { window.history.pushState({}, '', path); } catch (e) {}
+    try {
+      let path = '/';
+      if (newView === 'tv') path = '/live';
+      if (newView === 'login' || newView === 'admin') path = '/dashboard';
+      window.history.pushState({}, '', path);
+    } catch (e) {}
     setView(newView);
   };
 
+  // Auth
   useEffect(() => {
-    if (!auth) return;
+    if (!auth) {
+        setInitError("No se pudo conectar con el servicio de autenticación.");
+        return;
+    }
     const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        try { await signInWithCustomToken(auth, __initial_auth_token); } 
-        catch (e) { await signInAnonymously(auth); }
-      } else { await signInAnonymously(auth); }
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+           await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+           await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.error("Auth Error:", e);
+        // No bloqueamos la UI, dejamos que intente de nuevo o funcione limitado
+      }
     };
     initAuth();
-    onAuthStateChanged(auth, setUser);
+    return onAuthStateChanged(auth, setUser);
   }, []);
 
+  // Data Sync
   useEffect(() => {
     if (!user || !db) return;
-    const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
-    const unsubPlaylist = onSnapshot(playlistRef, (snapshot) => {
-      const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setPlaylist(items.sort((a, b) => (a.order || 0) - (b.order || 0)));
-    });
-    const authDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'auth');
-    const unsubSettings = onSnapshot(authDocRef, (docSnap) => {
-        if (docSnap.exists()) setDbPassword(docSnap.data().password);
-    });
-    return () => { unsubPlaylist(); unsubSettings(); };
+    try {
+        const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
+        const unsubPlaylist = onSnapshot(playlistRef, (snapshot) => {
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setPlaylist(items.sort((a, b) => (a.order || 0) - (b.order || 0)));
+        });
+        
+        const authDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'auth');
+        const unsubSettings = onSnapshot(authDocRef, (docSnap) => {
+            if (docSnap.exists()) setDbPassword(docSnap.data().password);
+        });
+        return () => { unsubPlaylist(); unsubSettings(); };
+    } catch(e) { console.error("Data Sync Error", e); }
   }, [user]);
 
-  const validateLogin = (pass) => pass === (dbPassword || ENV_PASSWORD);
+  const validateLogin = (pass) => pass === (dbPassword || FIREBASE_DEFAULTS.adminPass);
+  
   const handleUpdatePassword = async (pass) => {
       if (!db || !user) return;
       try {
@@ -113,7 +150,9 @@ export default function App() {
       } catch (e) { return false; }
   };
 
-  if (!app) return <div className="min-h-screen bg-black text-white p-10 text-center">Configurando Señal...</div>;
+  // Renderizado Seguro
+  if (initError) return <div className="h-screen bg-red-950 text-white flex items-center justify-center p-4 text-center">Error: {initError}</div>;
+  if (!app) return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center font-bold animate-pulse">Iniciando Sistema...</div>;
 
   const renderView = () => {
     switch (view) {
@@ -158,7 +197,6 @@ function Toast({ notification, onClose }) {
     );
 }
 
-// Modal Actualizado para soportar Múltiples Acciones
 function ConfirmModal({ isOpen, title, message, onConfirm, onCancel, actions }) {
     if (!isOpen) return null;
     return (
@@ -166,17 +204,10 @@ function ConfirmModal({ isOpen, title, message, onConfirm, onCancel, actions }) 
             <div className="bg-slate-900 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-sm w-full scale-100 animate-in zoom-in-95 duration-200">
                 <h3 className="text-lg font-bold text-white mb-2">{title}</h3>
                 <p className="text-slate-400 text-sm mb-6 leading-relaxed">{message}</p>
-                
                 {actions ? (
                     <div className="flex flex-col gap-2">
                         {actions.map((action, idx) => (
-                             <button 
-                                key={idx}
-                                onClick={action.onClick} 
-                                className={`w-full py-3 rounded-xl font-bold text-xs shadow-lg transition-transform active:scale-95 ${action.className || 'bg-slate-800 text-white hover:bg-slate-700'}`}
-                             >
-                                {action.label}
-                             </button>
+                             <button key={idx} onClick={action.onClick} className={`w-full py-3 rounded-xl font-bold text-xs shadow-lg transition-transform active:scale-95 ${action.className || 'bg-slate-800 text-white hover:bg-slate-700'}`}>{action.label}</button>
                         ))}
                         <button onClick={onCancel} className="w-full py-3 rounded-xl text-slate-400 font-bold text-xs hover:bg-white/5 transition-colors mt-2">CANCELAR OPERACIÓN</button>
                     </div>
@@ -240,7 +271,7 @@ function Login({ onValidate, onLogin, onBack }) {
 }
 
 function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
-  const [tab, setTab] = useState('content');
+  const [tab, setTab] = useState('content'); // content | devices | settings
   const [scheduleMode, setScheduleMode] = useState('now');
   const [newUrl, setNewUrl] = useState('');
   const [newTitle, setNewTitle] = useState('');
@@ -249,21 +280,39 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   const [editingId, setEditingId] = useState(null);
   const [newPass, setNewPass] = useState('');
   
-  // DRAG AND DROP: Estado Local para manipulación visual suave
+  // DRAG AND DROP
   const [sortedPlaylist, setSortedPlaylist] = useState([]);
   const [dragItemIndex, setDragItemIndex] = useState(null); 
   
+  // DEVICES
+  const [devices, setDevices] = useState([]);
+  const [editingDevice, setEditingDevice] = useState(null); // ID del dispositivo que editamos
+  const [deviceLabel, setDeviceLabel] = useState('');
+
   const [notification, setNotification] = useState(null);
-  // Modal state actualizado para aceptar 'actions'
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, actions: null });
   const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
   const showToast = (title, message, type = 'success') => setNotification({ title, message, type });
 
-  // Sincronizar estado local con DB solo si no estamos arrastrando
+  // Sync devices
   useEffect(() => {
-    if (dragItemIndex === null) {
-        setSortedPlaylist(playlist);
-    }
+      if(tab !== 'devices') return;
+      const devicesRef = collection(db, 'artifacts', appId, 'public', 'data', 'devices');
+      const unsub = onSnapshot(devicesRef, (snap) => {
+          const devs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          // Ordenar: Online primero, luego por nombre
+          setDevices(devs.sort((a,b) => {
+              const aOnline = (Date.now() - new Date(a.lastSeen).getTime()) < 40000;
+              const bOnline = (Date.now() - new Date(b.lastSeen).getTime()) < 40000;
+              if (aOnline === bOnline) return (a.label || a.id).localeCompare(b.label || b.id);
+              return aOnline ? -1 : 1;
+          }));
+      });
+      return () => unsub();
+  }, [tab]);
+
+  useEffect(() => {
+    if (dragItemIndex === null) setSortedPlaylist(playlist);
   }, [playlist, dragItemIndex]);
 
   const handleSave = async (e) => {
@@ -271,9 +320,7 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
     const ytId = getYouTubeId(newUrl);
     if (!ytId) return showToast("URL Inválida", "Enlace de YouTube no válido.", "error");
 
-    // Lógica para detectar si es un "Clon" (Campaña compartida)
     const isEditingClone = editingId && playlist.some(p => p.id !== editingId && p.youtubeId === ytId);
-
     if (!editingId) {
         const isDuplicateId = playlist.some(p => p.youtubeId === ytId);
         if (isDuplicateId) return showToast("Ya existe", "Este video ya está en lista. Usa el botón 'Clonar' para repetirlo.", "warning");
@@ -282,21 +329,16 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
     try {
       const payload = {
         youtubeId: ytId, title: newTitle || `Video de YouTube`,
-        // Mantenemos la visibilidad original si estamos editando, o true si es nuevo
         visible: editingId ? (playlist.find(p => p.id === editingId)?.visible ?? true) : true,
         startDate: (scheduleMode === 'now') ? getTodayString() : (startDate || getTodayString()),
         endDate: endDate || null
       };
 
       if (editingId) {
-        // --- EDICIÓN SINCRONIZADA ---
         const originalItem = playlist.find(p => p.id === editingId);
         const originalYtId = originalItem?.youtubeId;
-
         const batch = writeBatch(db);
-        
         if (originalYtId === ytId) {
-            // Es el mismo video, actualizamos TODOS los clones para mantener la campaña sincronizada
             const clones = playlist.filter(p => p.youtubeId === originalYtId);
             clones.forEach(clone => {
                  const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id);
@@ -305,13 +347,11 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
             await batch.commit();
             showToast("Campaña Actualizada", `Se actualizaron ${clones.length} instancias del video.`);
         } else {
-            // Cambió el video totalmente, solo actualizamos este doc
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', editingId), payload);
             showToast("Video Actualizado", "Se modificó el video individualmente.");
         }
         resetForm();
       } else {
-        // --- NUEVO VIDEO ---
         payload.order = playlist.length; 
         payload.createdAt = new Date().toISOString(); 
         await addDoc(playlistRef, payload); 
@@ -323,26 +363,13 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
 
   const promptDuplicate = (item) => {
       setConfirmDialog({ 
-          isOpen: true, 
-          title: "Clonar Video", 
-          message: `Esto creará una nueva instancia de "${item.title}". Si editas o borras una, afectará a todas las copias.`, 
+          isOpen: true, title: "Clonar Video", message: `Esto creará una nueva instancia de "${item.title}". Si editas o borras una, afectará a todas las copias.`, 
           onConfirm: () => handleDuplicate(item) 
       });
   };
 
   const handleDuplicate = async (item) => {
-      try { 
-          await addDoc(playlistRef, { 
-              youtubeId: item.youtubeId, 
-              title: item.title, 
-              visible: item.visible, 
-              startDate: item.startDate, 
-              endDate: item.endDate, 
-              order: playlist.length, 
-              createdAt: new Date().toISOString() 
-          }); 
-          showToast("Clonado", "Se añadió una copia al final de la lista."); 
-      } 
+      try { await addDoc(playlistRef, { youtubeId: item.youtubeId, title: item.title, visible: item.visible, startDate: item.startDate, endDate: item.endDate, order: playlist.length, createdAt: new Date().toISOString() }); showToast("Clonado", "Se añadió una copia al final de la lista."); } 
       catch (e) { showToast("Error", "Error al clonar.", "error"); }
       setConfirmDialog({ ...confirmDialog, isOpen: false });
   };
@@ -354,117 +381,59 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   };
 
   const resetForm = () => { setEditingId(null); setNewUrl(''); setNewTitle(''); setStartDate(''); setEndDate(''); setScheduleMode('now'); };
-  
   const handleChangePass = async (e) => { e.preventDefault(); if (!newPass) return; if (await onUpdatePassword(newPass)) { showToast("Clave Actualizada", "Guardado."); setNewPass(''); } else showToast("Error", "Error al cambiar clave.", "error"); };
   
-  // --- ELIMINACIÓN CONTEXTUAL ---
   const promptDelete = (item) => { 
-      // Detectar si hay clones
       const clonesCount = playlist.filter(p => p.youtubeId === item.youtubeId).length;
-
       if (clonesCount > 1) {
-          // Si hay clones, mostramos las opciones avanzadas
           setConfirmDialog({ 
-            isOpen: true, 
-            title: "Gestionar Eliminación", 
-            message: `Este video es parte de una campaña con ${clonesCount} copias. ¿Qué deseas hacer?`, 
+            isOpen: true, title: "Gestionar Eliminación", message: `Este video es parte de una campaña con ${clonesCount} copias. ¿Qué deseas hacer?`, 
             actions: [
-                { 
-                    label: "ELIMINAR SOLO ESTA COPIA", 
-                    onClick: () => deleteSingleInstance(item.id),
-                    className: "bg-indigo-600 hover:bg-indigo-500 text-white" 
-                },
-                { 
-                    label: `ELIMINAR TODAS (${clonesCount})`, 
-                    onClick: () => deleteCampaign(item),
-                    className: "bg-red-600 hover:bg-red-500 text-white" 
-                }
+                { label: "ELIMINAR SOLO ESTA COPIA", onClick: () => deleteSingleInstance(item.id), className: "bg-indigo-600 hover:bg-indigo-500 text-white" },
+                { label: `ELIMINAR TODAS (${clonesCount})`, onClick: () => deleteCampaign(item), className: "bg-red-600 hover:bg-red-500 text-white" }
             ]
         });
       } else {
-          // Eliminación simple
-          setConfirmDialog({ 
-              isOpen: true, 
-              title: "Eliminar Video", 
-              message: "¿Estás seguro de que deseas eliminar este video permanentemente?", 
-              onConfirm: () => deleteSingleInstance(item.id) 
-          }); 
+          setConfirmDialog({ isOpen: true, title: "Eliminar Video", message: "¿Estás seguro de que deseas eliminar este video permanentemente?", onConfirm: () => deleteSingleInstance(item.id) }); 
       }
   };
 
-  const deleteSingleInstance = async (id) => {
-      try {
-          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id));
-          if(editingId === id) resetForm();
-          showToast("Instancia Eliminada", "Se ha borrado el video seleccionado.");
-      } catch(e) { showToast("Error", "No se pudo eliminar el elemento.", "error"); }
-      setConfirmDialog({ ...confirmDialog, isOpen: false });
-  };
-
-  const deleteCampaign = async (item) => { 
-      try { 
-          // BORRADO EN GRUPO
-          const batch = writeBatch(db);
-          const clones = playlist.filter(p => p.youtubeId === item.youtubeId);
-          
-          clones.forEach(clone => {
-              const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id);
-              batch.delete(docRef);
-          });
-          
-          await batch.commit();
-
-          if(editingId && clones.some(c => c.id === editingId)) resetForm(); 
-          showToast("Campaña Eliminada", `Se eliminaron ${clones.length} videos de la lista.`); 
-      } catch(e) { showToast("Error", "Error al borrar.", "error"); } 
-      setConfirmDialog({ ...confirmDialog, isOpen: false }); 
-  };
-  
-  const toggleVisibility = async (item) => {
-      const batch = writeBatch(db);
-      const clones = playlist.filter(p => p.youtubeId === item.youtubeId);
-      const newStatus = !item.visible;
-      clones.forEach(clone => {
-          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id);
-          batch.update(docRef, { visible: newStatus });
-      });
-      await batch.commit();
-  };
-  
-  // --- DRAG HANDLERS ---
+  const deleteSingleInstance = async (id) => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id)); if(editingId === id) resetForm(); showToast("Instancia Eliminada", "Se ha borrado el video seleccionado."); } catch(e) { showToast("Error", "No se pudo eliminar el elemento.", "error"); } setConfirmDialog({ ...confirmDialog, isOpen: false }); };
+  const deleteCampaign = async (item) => { try { const batch = writeBatch(db); const clones = playlist.filter(p => p.youtubeId === item.youtubeId); clones.forEach(clone => { const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id); batch.delete(docRef); }); await batch.commit(); if(editingId && clones.some(c => c.id === editingId)) resetForm(); showToast("Campaña Eliminada", `Se eliminaron ${clones.length} videos de la lista.`); } catch(e) { showToast("Error", "Error al borrar.", "error"); } setConfirmDialog({ ...confirmDialog, isOpen: false }); };
+  const toggleVisibility = async (item) => { const batch = writeBatch(db); const clones = playlist.filter(p => p.youtubeId === item.youtubeId); const newStatus = !item.visible; clones.forEach(clone => { const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id); batch.update(docRef, { visible: newStatus }); }); await batch.commit(); };
   const onDragStart = (e, index) => { setDragItemIndex(index); e.dataTransfer.effectAllowed = "move"; };
-  const onDragEnter = (e, index) => {
-    if (dragItemIndex === null || dragItemIndex === index) return;
-    const newList = [...sortedPlaylist];
-    const item = newList[dragItemIndex];
-    newList.splice(dragItemIndex, 1);
-    newList.splice(index, 0, item);
-    setDragItemIndex(index);
-    setSortedPlaylist(newList);
+  const onDragEnter = (e, index) => { if (dragItemIndex === null || dragItemIndex === index) return; const newList = [...sortedPlaylist]; const item = newList[dragItemIndex]; newList.splice(dragItemIndex, 1); newList.splice(index, 0, item); setDragItemIndex(index); setSortedPlaylist(newList); };
+  const onDragEnd = async () => { const finalIndex = dragItemIndex; setDragItemIndex(null); if (finalIndex === null) return; const batch = writeBatch(db); sortedPlaylist.forEach((item, idx) => { const ref = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', item.id); batch.update(ref, { order: idx }); }); try { await batch.commit(); } catch(e) { showToast("Error", "Error orden.", "error"); setSortedPlaylist(playlist); } };
+
+  // --- DEVICE ACTIONS ---
+  const saveDeviceLabel = async (devId) => {
+      try {
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'devices', devId), { label: deviceLabel });
+          setEditingDevice(null);
+          showToast("Guardado", "Nombre del dispositivo actualizado.");
+      } catch(e) { showToast("Error", "No se pudo guardar.", "error"); }
   };
-  const onDragEnd = async () => {
-    const finalIndex = dragItemIndex; setDragItemIndex(null); if (finalIndex === null) return;
-    const batch = writeBatch(db);
-    sortedPlaylist.forEach((item, idx) => { const ref = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', item.id); batch.update(ref, { order: idx }); });
-    try { await batch.commit(); } catch(e) { showToast("Error", "Error orden.", "error"); setSortedPlaylist(playlist); }
+
+  const deleteDevice = async (devId) => {
+      try {
+          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'devices', devId));
+          showToast("Olvidado", "Dispositivo eliminado del registro.");
+      } catch(e) { showToast("Error", "No se pudo eliminar.", "error"); }
   };
 
   return (
     <div className="flex flex-col h-full max-w-7xl mx-auto overflow-hidden">
       <Toast notification={notification} onClose={() => setNotification(null)} />
-      <ConfirmModal 
-        isOpen={confirmDialog.isOpen} 
-        title={confirmDialog.title} 
-        message={confirmDialog.message} 
-        onConfirm={confirmDialog.onConfirm} 
-        onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} 
-        actions={confirmDialog.actions}
-      />
+      <ConfirmModal isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} actions={confirmDialog.actions} />
 
       <header className="shrink-0 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-900/60 p-4 m-4 md:mx-8 rounded-3xl border border-white/5 backdrop-blur-md shadow-2xl z-40">
         <div className="flex items-center gap-4"><div className="p-3 bg-indigo-500/20 rounded-xl"><List className="text-indigo-400 w-6 h-6" /></div><div><h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">Panel 4Life Colombia</h1><p className="text-slate-400 text-[10px] font-mono uppercase tracking-widest">Conexión: <span className="animate-pulse text-emerald-400 font-bold">Live</span></p></div></div>
         <div className="flex items-center gap-3">
-          <div className="flex bg-slate-800/50 p-1 rounded-xl border border-white/5"><button onClick={() => setTab('content')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'content' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>CONTENIDO</button><button onClick={() => setTab('settings')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'settings' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>SEGURIDAD</button></div>
+          <div className="flex bg-slate-800/50 p-1 rounded-xl border border-white/5">
+              <button onClick={() => setTab('content')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'content' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>CONTENIDO</button>
+              <button onClick={() => setTab('devices')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'devices' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>MONITORES</button>
+              <button onClick={() => setTab('settings')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'settings' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>SEGURIDAD</button>
+          </div>
           <div className="w-px h-8 bg-white/10 mx-1 hidden md:block"></div>
           <button onClick={onGoToTV} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white shadow-lg transition-all active:scale-95"><MonitorPlay size={16} /> LIVE</button>
           <button onClick={onLogout} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl border border-white/5 transition-colors"><LogOut size={18} /></button>
@@ -472,11 +441,91 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
       </header>
 
       <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
-        {tab === 'settings' ? (
+        {tab === 'devices' && (
+             <div className="h-full overflow-y-auto custom-scrollbar pb-20">
+                <div className="max-w-4xl mx-auto space-y-4">
+                    <div className="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 className="text-2xl font-bold text-white flex items-center gap-2"><Activity className="text-indigo-400"/> Estado de Pantallas</h2>
+                            <p className="text-slate-400 text-sm">Monitoreo en tiempo real de los dispositivos conectados.</p>
+                        </div>
+                        <div className="bg-slate-900/50 px-4 py-2 rounded-xl border border-white/10 text-xs font-mono text-slate-400">
+                            Total: <span className="text-white font-bold">{devices.length}</span>
+                        </div>
+                    </div>
+
+                    {devices.length === 0 && (
+                        <div className="p-12 text-center bg-slate-900/40 rounded-3xl border border-dashed border-white/10">
+                            <WifiOff className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+                            <p className="text-slate-500 text-sm mb-4">No se han detectado pantallas activas aún.</p>
+                            <button onClick={() => window.open('/live', '_blank')} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-sm shadow-lg flex items-center gap-2 mx-auto"><ExternalLink size={16}/> ABRIR SIMULADOR TV</button>
+                            <p className="text-slate-600 text-xs mt-4">Usa este botón para abrir una ventana "cliente" y ver cómo aparece aquí.</p>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {devices.map(dev => {
+                            const isOnline = (Date.now() - new Date(dev.lastSeen).getTime()) < 40000; // 40s umbral
+                            const isEditing = editingDevice === dev.id;
+
+                            return (
+                                <div key={dev.id} className={`p-4 rounded-2xl border transition-all ${isOnline ? 'bg-slate-900/80 border-emerald-500/30 shadow-lg shadow-emerald-900/5' : 'bg-slate-900/40 border-white/5 opacity-70'}`}>
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${isOnline ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/50 text-slate-500'}`}>
+                                            {isOnline ? <Wifi size={12}/> : <WifiOff size={12}/>}
+                                            {isOnline ? 'ONLINE' : 'OFFLINE'}
+                                        </div>
+                                        <button onClick={() => deleteDevice(dev.id)} className="text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={14}/></button>
+                                    </div>
+                                    
+                                    <div className="mb-4">
+                                        {isEditing ? (
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    autoFocus
+                                                    className="w-full bg-slate-950 border border-indigo-500 rounded px-2 py-1 text-sm text-white outline-none"
+                                                    value={deviceLabel}
+                                                    onChange={e => setDeviceLabel(e.target.value)}
+                                                    placeholder="Nombre ej: Sala Juntas"
+                                                />
+                                                <button onClick={() => saveDeviceLabel(dev.id)} className="bg-indigo-600 text-white px-2 rounded hover:bg-indigo-500"><CheckCircle size={14}/></button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2 group">
+                                                <h3 className="font-bold text-white text-lg truncate" title={dev.id}>
+                                                    {dev.label || 'Pantalla Sin Nombre'}
+                                                </h3>
+                                                <button onClick={() => { setEditingDevice(dev.id); setDeviceLabel(dev.label || ''); }} className="text-slate-600 group-hover:text-indigo-400 transition-colors"><Edit3 size={14}/></button>
+                                            </div>
+                                        )}
+                                        <p className="text-[10px] font-mono text-slate-500 mt-1 truncate">ID: {dev.id}</p>
+                                    </div>
+
+                                    <div className="space-y-2 pt-3 border-t border-white/5">
+                                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                                            <Film size={12} className="text-indigo-400"/>
+                                            <span className="truncate flex-1" title={dev.currentVideo}>{dev.currentVideo || 'Sin actividad'}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                                            <Clock size={10}/>
+                                            <span>Visto: {new Date(dev.lastSeen).toLocaleTimeString()}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+             </div>
+        )}
+
+        {tab === 'settings' && (
           <div className="h-full overflow-y-auto custom-scrollbar">
             <div className="max-w-md mx-auto bg-slate-900/80 rounded-3xl p-8 border border-white/10 shadow-2xl backdrop-blur-xl mt-8"><h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Shield className="text-indigo-400"/> Seguridad</h3><p className="text-slate-400 text-sm mb-6">Cambia la contraseña de acceso al panel.</p><form onSubmit={handleChangePass} className="space-y-4"><div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Nueva Clave</label><div className="relative"><Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} /><input type="text" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="Ej: admin2026" className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" /></div></div><button disabled={!newPass} type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 rounded-xl font-bold shadow-lg shadow-emerald-900/10 transition-all">ACTUALIZAR CLAVE</button></form></div>
           </div>
-        ) : (
+        )}
+
+        {tab === 'content' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full">
             <div className="lg:col-span-1 h-full overflow-y-auto pr-2 custom-scrollbar">
               <div className={`bg-slate-900/80 rounded-3xl p-6 border transition-all shadow-2xl space-y-5 backdrop-blur-xl mb-4 ${editingId ? 'border-indigo-500 ring-1 ring-indigo-500/50' : 'border-white/10'}`}>
@@ -500,7 +549,6 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
                   const isScheduled = item.startDate && item.startDate > now;
                   const isExpired = item.endDate && item.endDate < now;
                   const isDraggingThis = dragItemIndex === index;
-                  // Detectar si es un clon (aparece más de una vez)
                   const cloneCount = sortedPlaylist.filter(p => p.youtubeId === item.youtubeId).length;
                   const isClone = cloneCount > 1;
 
@@ -561,6 +609,7 @@ function TVMode({ playlist, onExit }) {
   const [showUI, setShowUI] = useState(false); 
   const [errorMsg, setErrorMsg] = useState(null);
   const [isMuted, setIsMuted] = useState(true);
+  const [myDeviceId] = useState(getDeviceId());
   const playerRef = useRef(null);
   const uiTimerRef = useRef(null);
   
@@ -570,6 +619,28 @@ function TVMode({ playlist, onExit }) {
     return (!v.startDate || v.startDate <= now) && (!v.endDate || v.expiresAt || v.endDate >= now);
   });
   const currentVideo = activePlaylist[currentIdx];
+
+  // HEARTBEAT SYSTEM
+  useEffect(() => {
+    const heartbeat = setInterval(async () => {
+        try {
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'devices', myDeviceId), {
+                lastSeen: new Date().toISOString(),
+                currentVideo: currentVideo?.title || 'Esperando...',
+            }, { merge: true });
+        } catch(e) { console.warn("Heartbeat failed", e); }
+    }, 15000);
+    
+    // Disparar uno inmediato al montar
+    try {
+        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'devices', myDeviceId), {
+            lastSeen: new Date().toISOString(),
+            currentVideo: currentVideo?.title || 'Iniciando...',
+        }, { merge: true });
+    } catch(e) {}
+
+    return () => clearInterval(heartbeat);
+  }, [currentVideo, myDeviceId]);
 
   const resetUITimer = useCallback(() => {
     setShowUI(true);
@@ -585,13 +656,11 @@ function TVMode({ playlist, onExit }) {
     setCurrentIdx(prev => (prev + 1 >= activePlaylist.length ? 0 : prev + 1));
   }, [activePlaylist.length]);
 
-  // Watchdog hook: Checks every 2s if paused and forces play
   useEffect(() => {
       const interval = setInterval(() => {
           if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
               const state = playerRef.current.getPlayerState();
               if (state === 2 || state === 5) {
-                  console.log("Watchdog: Forcing play");
                   playerRef.current.playVideo();
               }
           }
@@ -646,7 +715,13 @@ function TVMode({ playlist, onExit }) {
             <h2 className="text-3xl font-black text-white drop-shadow-2xl tracking-tighter uppercase italic opacity-90">{currentVideo.title}</h2>
             <div className="flex items-center gap-3"><div className="bg-red-600 px-2 py-0.5 rounded text-[8px] font-black text-white tracking-widest uppercase">YouTube</div><p className="text-white/40 font-mono text-[10px] flex items-center gap-2"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> SINTONIZADO • {activePlaylist.indexOf(currentVideo) + 1}/{activePlaylist.length}</p></div>
           </div>
-          <button onClick={onExit} className="pointer-events-auto p-3 bg-white/5 hover:bg-red-600/40 backdrop-blur-md rounded-2xl text-white/40 hover:text-white transition-all border border-white/5 hover:scale-110 active:scale-90 shadow-xl"><LogOut size={20} /></button>
+          <div className="flex items-start gap-4">
+             {/* ID de dispositivo visible solo en UI para ayudar al admin a identificar la pantalla */}
+             <div className="bg-black/40 backdrop-blur px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-white/50 font-mono pointer-events-auto">
+                 ID: <span className="text-white select-all">{myDeviceId}</span>
+             </div>
+             <button onClick={onExit} className="pointer-events-auto p-3 bg-white/5 hover:bg-red-600/40 backdrop-blur-md rounded-2xl text-white/40 hover:text-white transition-all border border-white/5 hover:scale-110 active:scale-90 shadow-xl"><LogOut size={20} /></button>
+          </div>
         </div>
       </div>
       {errorMsg && <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-xl"><AlertTriangle className="w-16 h-16 text-yellow-600 mb-4 animate-pulse" /><p className="text-2xl font-black uppercase italic text-white/80">{errorMsg}</p></div>}
