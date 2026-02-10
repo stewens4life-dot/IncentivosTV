@@ -158,13 +158,34 @@ function Toast({ notification, onClose }) {
     );
 }
 
-function ConfirmModal({ isOpen, title, message, onConfirm, onCancel }) {
+// Modal Actualizado para soportar Múltiples Acciones
+function ConfirmModal({ isOpen, title, message, onConfirm, onCancel, actions }) {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-slate-900 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-sm w-full scale-100 animate-in zoom-in-95 duration-200">
-                <h3 className="text-lg font-bold text-white mb-2">{title}</h3><p className="text-slate-400 text-sm mb-6 leading-relaxed">{message}</p>
-                <div className="flex gap-3"><button onClick={onCancel} className="flex-1 py-2.5 rounded-xl text-slate-400 font-bold text-xs hover:bg-white/5 transition-colors">CANCELAR</button><button onClick={onConfirm} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-xs shadow-lg">CONFIRMAR</button></div>
+                <h3 className="text-lg font-bold text-white mb-2">{title}</h3>
+                <p className="text-slate-400 text-sm mb-6 leading-relaxed">{message}</p>
+                
+                {actions ? (
+                    <div className="flex flex-col gap-2">
+                        {actions.map((action, idx) => (
+                             <button 
+                                key={idx}
+                                onClick={action.onClick} 
+                                className={`w-full py-3 rounded-xl font-bold text-xs shadow-lg transition-transform active:scale-95 ${action.className || 'bg-slate-800 text-white hover:bg-slate-700'}`}
+                             >
+                                {action.label}
+                             </button>
+                        ))}
+                        <button onClick={onCancel} className="w-full py-3 rounded-xl text-slate-400 font-bold text-xs hover:bg-white/5 transition-colors mt-2">CANCELAR OPERACIÓN</button>
+                    </div>
+                ) : (
+                    <div className="flex gap-3">
+                        <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl text-slate-400 font-bold text-xs hover:bg-white/5 transition-colors">CANCELAR</button>
+                        <button onClick={onConfirm} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-xs shadow-lg">CONFIRMAR</button>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -188,7 +209,8 @@ function Landing({ onSelectTV, onSelectAdmin }) {
           </button>
           <button onClick={onSelectAdmin} className="group relative flex flex-col items-center p-8 bg-slate-900/50 hover:bg-slate-800/80 rounded-3xl border border-white/5 hover:border-indigo-500/50 transition-all duration-500 hover:-translate-y-2 backdrop-blur-md">
             <div className="absolute -top-3 -right-3 bg-indigo-500 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg">/ADMIN</div>
-            <Settings className="w-12 h-12 mb-6 text-slate-300 group-hover:text-white transition-colors" /><span className="text-2xl font-bold text-white">Admin</span>
+            <div className="w-12 h-12 mb-6 flex items-center justify-center"><Settings className="w-full h-full text-slate-300 group-hover:text-white transition-colors" /></div>
+            <span className="text-2xl font-bold text-white">Admin</span>
           </button>
         </div>
       </div>
@@ -232,7 +254,8 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   const [dragItemIndex, setDragItemIndex] = useState(null); 
   
   const [notification, setNotification] = useState(null);
-  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+  // Modal state actualizado para aceptar 'actions'
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, actions: null });
   const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
   const showToast = (title, message, type = 'success') => setNotification({ title, message, type });
 
@@ -251,9 +274,6 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
     // Lógica para detectar si es un "Clon" (Campaña compartida)
     const isEditingClone = editingId && playlist.some(p => p.id !== editingId && p.youtubeId === ytId);
 
-    // Si CREAMOS uno nuevo, validamos duplicados (para evitar errores accidentales)
-    // Pero permitimos duplicar explicitamente via el botón de clonar.
-    // Aquí, si intentan añadir manualmente uno que ya existe, avisamos.
     if (!editingId) {
         const isDuplicateId = playlist.some(p => p.youtubeId === ytId);
         if (isDuplicateId) return showToast("Ya existe", "Este video ya está en lista. Usa el botón 'Clonar' para repetirlo.", "warning");
@@ -270,12 +290,9 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
 
       if (editingId) {
         // --- EDICIÓN SINCRONIZADA ---
-        // Buscamos el youtubeId ORIGINAL del elemento que estamos editando (antes de que el usuario lo cambie en el form)
         const originalItem = playlist.find(p => p.id === editingId);
         const originalYtId = originalItem?.youtubeId;
 
-        // Si el usuario cambia el ID de YouTube, solo editamos ESTE elemento (rompe el enlace)
-        // Pero si mantiene el mismo ID, actualizamos TODOS los clones (Título, fechas, etc)
         const batch = writeBatch(db);
         
         if (originalYtId === ytId) {
@@ -305,7 +322,6 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   };
 
   const promptDuplicate = (item) => {
-      // Mensaje actualizado para reflejar "Clonar"
       setConfirmDialog({ 
           isOpen: true, 
           title: "Clonar Video", 
@@ -316,10 +332,9 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
 
   const handleDuplicate = async (item) => {
       try { 
-          // Clonamos EXACTAMENTE los mismos datos para mantener el enlace de "youtubeId"
           await addDoc(playlistRef, { 
               youtubeId: item.youtubeId, 
-              title: item.title, // Mismo título para que parezca el mismo objeto
+              title: item.title, 
               visible: item.visible, 
               startDate: item.startDate, 
               endDate: item.endDate, 
@@ -342,24 +357,53 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   
   const handleChangePass = async (e) => { e.preventDefault(); if (!newPass) return; if (await onUpdatePassword(newPass)) { showToast("Clave Actualizada", "Guardado."); setNewPass(''); } else showToast("Error", "Error al cambiar clave.", "error"); };
   
+  // --- ELIMINACIÓN CONTEXTUAL ---
   const promptDelete = (item) => { 
       // Detectar si hay clones
       const clonesCount = playlist.filter(p => p.youtubeId === item.youtubeId).length;
-      const msg = clonesCount > 1 
-        ? `Este video aparece ${clonesCount} veces. Se eliminarán TODAS las copias de la campaña.` 
-        : "¿Borrar permanentemente este video?";
 
-      setConfirmDialog({ 
-          isOpen: true, 
-          title: "Eliminar Campaña", 
-          message: msg, 
-          onConfirm: () => deleteCampaign(item) 
-      }); 
+      if (clonesCount > 1) {
+          // Si hay clones, mostramos las opciones avanzadas
+          setConfirmDialog({ 
+            isOpen: true, 
+            title: "Gestionar Eliminación", 
+            message: `Este video es parte de una campaña con ${clonesCount} copias. ¿Qué deseas hacer?`, 
+            actions: [
+                { 
+                    label: "ELIMINAR SOLO ESTA COPIA", 
+                    onClick: () => deleteSingleInstance(item.id),
+                    className: "bg-indigo-600 hover:bg-indigo-500 text-white" 
+                },
+                { 
+                    label: `ELIMINAR TODAS (${clonesCount})`, 
+                    onClick: () => deleteCampaign(item),
+                    className: "bg-red-600 hover:bg-red-500 text-white" 
+                }
+            ]
+        });
+      } else {
+          // Eliminación simple
+          setConfirmDialog({ 
+              isOpen: true, 
+              title: "Eliminar Video", 
+              message: "¿Estás seguro de que deseas eliminar este video permanentemente?", 
+              onConfirm: () => deleteSingleInstance(item.id) 
+          }); 
+      }
+  };
+
+  const deleteSingleInstance = async (id) => {
+      try {
+          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id));
+          if(editingId === id) resetForm();
+          showToast("Instancia Eliminada", "Se ha borrado el video seleccionado.");
+      } catch(e) { showToast("Error", "No se pudo eliminar el elemento.", "error"); }
+      setConfirmDialog({ ...confirmDialog, isOpen: false });
   };
 
   const deleteCampaign = async (item) => { 
       try { 
-          // BORRADO EN GRUPO: Busamos todos los items con el mismo youtubeId
+          // BORRADO EN GRUPO
           const batch = writeBatch(db);
           const clones = playlist.filter(p => p.youtubeId === item.youtubeId);
           
@@ -377,11 +421,9 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   };
   
   const toggleVisibility = async (item) => {
-      // Toggle visibility for ALL clones
       const batch = writeBatch(db);
       const clones = playlist.filter(p => p.youtubeId === item.youtubeId);
       const newStatus = !item.visible;
-      
       clones.forEach(clone => {
           const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id);
           batch.update(docRef, { visible: newStatus });
@@ -410,7 +452,14 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   return (
     <div className="flex flex-col h-full max-w-7xl mx-auto overflow-hidden">
       <Toast notification={notification} onClose={() => setNotification(null)} />
-      <ConfirmModal isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} />
+      <ConfirmModal 
+        isOpen={confirmDialog.isOpen} 
+        title={confirmDialog.title} 
+        message={confirmDialog.message} 
+        onConfirm={confirmDialog.onConfirm} 
+        onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} 
+        actions={confirmDialog.actions}
+      />
 
       <header className="shrink-0 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-900/60 p-4 m-4 md:mx-8 rounded-3xl border border-white/5 backdrop-blur-md shadow-2xl z-40">
         <div className="flex items-center gap-4"><div className="p-3 bg-indigo-500/20 rounded-xl"><List className="text-indigo-400 w-6 h-6" /></div><div><h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">Panel 4Life Colombia</h1><p className="text-slate-400 text-[10px] font-mono uppercase tracking-widest">Conexión: <span className="animate-pulse text-emerald-400 font-bold">Live</span></p></div></div>
