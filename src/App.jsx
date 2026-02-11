@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube, GripVertical, Copy, Info, Layers, Activity, Edit3, Wifi, WifiOff, ExternalLink } from 'lucide-react';
+import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube, GripVertical, Copy, Info, Layers, Activity, Edit3, Wifi, WifiOff, ExternalLink, RefreshCw } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
@@ -479,6 +479,38 @@ function TVMode({ playlist, onExit }) {
   const uiTimerRef = useRef(null);
   const callbacksRef = useRef({});
 
+  // 1. WAKE LOCK API: Evita que la pantalla se apague (soportado por Smart TVs modernos)
+  useEffect(() => {
+    let wakeLock = null;
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          console.log('Wake Lock active');
+          wakeLock.addEventListener('release', () => console.log('Wake Lock released'));
+        }
+      } catch (err) { console.warn(err); }
+    };
+    requestWakeLock();
+    // Re-activar si la app vuelve a primer plano
+    const handleVisibility = () => { if (document.visibilityState === 'visible') requestWakeLock(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => { if (wakeLock) wakeLock.release(); document.removeEventListener('visibilitychange', handleVisibility); };
+  }, []);
+
+  // 2. PHANTOM ACTIVITY: Simula interacción cada minuto para engañar al protector de pantalla
+  useEffect(() => {
+      const ghostInterval = setInterval(() => {
+          // Dispara evento de movimiento de mouse falso
+          window.dispatchEvent(new MouseEvent('mousemove'));
+          // Fuerza repintado de un pixel invisible para mantener la GPU activa
+          const ghost = document.getElementById('ghost-pixel');
+          if (ghost) ghost.style.opacity = ghost.style.opacity === '0' ? '0.01' : '0';
+          console.log('Anti-sleep pulse');
+      }, 60000); // Cada minuto
+      return () => clearInterval(ghostInterval);
+  }, []);
+
   // Filtrar y memorizar la playlist activa
   const activePlaylist = useMemo(() => playlist.filter(v => {
     if (!v.visible) return false;
@@ -499,7 +531,7 @@ function TVMode({ playlist, onExit }) {
     setCurrentIdx(prev => (prev + 1) % activePlaylist.length);
   }, [activePlaylist.length]);
 
-  // Actualizar refs de callbacks para que el listener de YT siempre tenga la última versión
+  // Actualizar refs de callbacks
   useEffect(() => {
     callbacksRef.current.onEnded = handleNext;
     callbacksRef.current.onError = () => {
@@ -508,19 +540,19 @@ function TVMode({ playlist, onExit }) {
     };
   }, [handleNext]);
 
-  // Resetear índice si cambia la lista y nos quedamos fuera
+  // Resetear índice
   useEffect(() => {
     if (currentIdx >= activePlaylist.length && activePlaylist.length > 0) {
       setCurrentIdx(0);
     }
   }, [activePlaylist.length, currentIdx]);
 
-  // Watchdog: Forzar play si se pausa
+  // Watchdog: Forzar play
   useEffect(() => {
       const interval = setInterval(() => {
           if (playerRef.current?.getPlayerState) {
               const state = playerRef.current.getPlayerState();
-              if (state === 2 || state === 5) {
+              if (state === 2 || state === 5) { // Paused or Cued
                   console.log("Watchdog: Auto-resume");
                   playerRef.current.playVideo();
               }
@@ -529,12 +561,11 @@ function TVMode({ playlist, onExit }) {
       return () => clearInterval(interval);
   }, []);
 
-  // Inicialización ÚNICA del Player
+  // Inicialización Player
   useEffect(() => {
     if (!currentVideo) return;
     setErrorMsg(null);
 
-    // Si ya existe el player, solo cargamos el video
     if (playerRef.current) {
         if (playerRef.current.loadVideoById) {
             playerRef.current.loadVideoById({
@@ -545,13 +576,13 @@ function TVMode({ playlist, onExit }) {
         return;
     }
 
-    // Inicializar Player por primera vez
     const initYT = () => {
         playerRef.current = new window.YT.Player('yt-player', {
             height: '100%', width: '100%', videoId: currentVideo.youtubeId,
             playerVars: { 
                 'autoplay': 1, 'mute': 1, 'controls': 0, 'rel': 0, 'showinfo': 0, 'modestbranding': 1, 
-                'vq': 'hd1080', 'origin': window.location.origin, 'playsinline': 1 
+                'vq': 'hd1080', 'origin': window.location.origin, 'playsinline': 1,
+                'disablekb': 1, 'fs': 0 // Desactivar fullscreen nativo e inputs de teclado
             },
             events: {
                 'onReady': (e) => { 
@@ -563,12 +594,8 @@ function TVMode({ playlist, onExit }) {
                         setIsPlaying(true); 
                         try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} 
                     } 
-                    if (e.data === window.YT.PlayerState.ENDED) {
-                        callbacksRef.current.onEnded?.();
-                    }
-                    if (e.data === window.YT.PlayerState.PAUSED) {
-                        e.target.playVideo(); // Auto-resume inmediato
-                    }
+                    if (e.data === window.YT.PlayerState.ENDED) callbacksRef.current.onEnded?.();
+                    if (e.data === window.YT.PlayerState.PAUSED) e.target.playVideo();
                 },
                 'onError': () => callbacksRef.current.onError?.()
             }
@@ -580,7 +607,7 @@ function TVMode({ playlist, onExit }) {
         document.body.appendChild(tag); window.onYouTubeIframeAPIReady = initYT;
     } else { initYT(); }
 
-  }, [currentVideo]); // Solo depende de currentVideo para cargar, no recrea player si existe
+  }, [currentVideo]);
 
   // Listeners de UI
   useEffect(() => {
@@ -593,11 +620,13 @@ function TVMode({ playlist, onExit }) {
     };
   }, [resetUITimer]);
 
-
   if (!currentVideo) return <div className="h-screen bg-black flex flex-col items-center justify-center text-white"><Tv size={64} className="text-slate-800 animate-pulse mb-4" /><p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-40">Sin Señal Programada</p><button onClick={onExit} className="mt-8 px-6 py-2 bg-white/5 border border-white/10 rounded-full text-[10px] font-bold hover:bg-white/10 transition-all uppercase tracking-widest">Salir</button></div>;
 
   return (
     <div className={`fixed inset-0 w-screen h-screen bg-black overflow-hidden group ${showUI ? '' : 'cursor-none'}`}>
+      {/* Ghost Pixel Anti-Sleep */}
+      <div id="ghost-pixel" className="absolute top-0 left-0 w-px h-px bg-white opacity-0 pointer-events-none z-[9999]"></div>
+      
       <div id="yt-player" className="w-full h-full pointer-events-none scale-[1.01]"></div>
       {isMuted && isPlaying && <div className="absolute bottom-10 right-10 z-50 animate-bounce"><button onClick={() => {if(playerRef.current?.unMute){playerRef.current.unMute();setIsMuted(false);}}} className="bg-red-600 hover:bg-red-700 text-white p-5 rounded-full shadow-2xl transition-transform hover:scale-110"><VolumeX size={32} /></button><div className="text-center text-[8px] font-bold mt-2 text-white/40 uppercase tracking-widest bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">Activar Audio</div></div>}
       <div className={`absolute top-0 left-0 w-full z-30 transition-all duration-1000 pointer-events-none ${showUI ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
@@ -606,7 +635,11 @@ function TVMode({ playlist, onExit }) {
             <h2 className="text-3xl font-black text-white drop-shadow-2xl tracking-tighter uppercase italic opacity-90">{currentVideo.title}</h2>
             <div className="flex items-center gap-3"><div className="bg-red-600 px-2 py-0.5 rounded text-[8px] font-black text-white tracking-widest uppercase">YouTube</div><p className="text-white/40 font-mono text-[10px] flex items-center gap-2"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> SINTONIZADO • {activePlaylist.indexOf(currentVideo) + 1}/{activePlaylist.length}</p></div>
           </div>
-          <button onClick={onExit} className="pointer-events-auto p-3 bg-white/5 hover:bg-red-600/40 backdrop-blur-md rounded-2xl text-white/40 hover:text-white transition-all border border-white/5 hover:scale-110 active:scale-90 shadow-xl"><LogOut size={20} /></button>
+          <div className="flex gap-4">
+             {/* Botón de Emergencia para recargar si algo falla */}
+             <button onClick={() => window.location.reload()} className="pointer-events-auto p-3 bg-white/5 hover:bg-emerald-600/40 backdrop-blur-md rounded-2xl text-white/40 hover:text-white transition-all border border-white/5 hover:scale-110 active:scale-90 shadow-xl" title="Recargar Player"><RefreshCw size={20} /></button>
+             <button onClick={onExit} className="pointer-events-auto p-3 bg-white/5 hover:bg-red-600/40 backdrop-blur-md rounded-2xl text-white/40 hover:text-white transition-all border border-white/5 hover:scale-110 active:scale-90 shadow-xl"><LogOut size={20} /></button>
+          </div>
         </div>
       </div>
       {errorMsg && <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-xl"><AlertTriangle className="w-16 h-16 text-yellow-600 mb-4 animate-pulse" /><p className="text-2xl font-black uppercase italic text-white/80">{errorMsg}</p></div>}
