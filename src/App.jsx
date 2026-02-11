@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube, GripVertical, Copy, Info, Layers, Activity, Edit3, Wifi, WifiOff, ExternalLink } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
@@ -41,6 +41,7 @@ try {
 }
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'tvincentivos-prod';
+
 // --- Utilerías ---
 const getYouTubeId = (url) => {
   try {
@@ -53,22 +54,6 @@ const getYouTubeId = (url) => {
 
 const getTodayString = () => new Date().toISOString().split('T')[0];
 
-// Generador de ID de dispositivo A PRUEBA DE FALLOS
-const getDeviceId = () => {
-  try {
-    let id = localStorage.getItem('tv_device_id');
-    if (!id) {
-      id = 'tv-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-      localStorage.setItem('tv_device_id', id);
-    }
-    return id;
-  } catch (e) {
-    // Si localStorage falla (incógnito/bloqueado), usamos un ID temporal en memoria
-    console.warn("Acceso a LocalStorage bloqueado, usando ID temporal");
-    return 'tv-temp-' + Math.floor(Math.random() * 10000);
-  }
-};
-
 export default function App() {
   const [view, setView] = useState('landing');
   const [playlist, setPlaylist] = useState([]);
@@ -77,7 +62,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [initError, setInitError] = useState(null);
 
-  // Router simple y seguro
+  // Router simple
   useEffect(() => {
     try {
       const path = window.location.pathname;
@@ -89,7 +74,7 @@ export default function App() {
     } catch (e) { console.warn("Error en router", e); }
   }, []);
 
-  // Navegación segura
+  // Navegación
   const navigateTo = (newView) => {
     try {
       let path = '/';
@@ -100,10 +85,10 @@ export default function App() {
     setView(newView);
   };
 
-  // Auth
+  // Auth Robusta
   useEffect(() => {
     if (!auth) {
-        setInitError("No se pudo conectar con el servicio de autenticación.");
+        setInitError("Error de conexión.");
         return;
     }
     const initAuth = async () => {
@@ -114,8 +99,8 @@ export default function App() {
            await signInAnonymously(auth);
         }
       } catch (e) {
-        console.error("Auth Error:", e);
-        // No bloqueamos la UI, dejamos que intente de nuevo o funcione limitado
+        console.warn("Fallo auth, reintentando anónimo...", e);
+        try { await signInAnonymously(auth); } catch (err) {}
       }
     };
     initAuth();
@@ -128,8 +113,11 @@ export default function App() {
     try {
         const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
         const unsubPlaylist = onSnapshot(playlistRef, (snapshot) => {
-        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setPlaylist(items.sort((a, b) => (a.order || 0) - (b.order || 0)));
+          const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setPlaylist(items.sort((a, b) => (a.order || 0) - (b.order || 0)));
+        }, (err) => {
+             console.error("Error lectura playlist", err);
+             if(err.code === 'permission-denied') signInAnonymously(auth).catch(()=>{});
         });
         
         const authDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'auth');
@@ -150,9 +138,8 @@ export default function App() {
       } catch (e) { return false; }
   };
 
-  // Renderizado Seguro
-  if (initError) return <div className="h-screen bg-red-950 text-white flex items-center justify-center p-4 text-center">Error: {initError}</div>;
-  if (!app) return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center font-bold animate-pulse">Iniciando Sistema...</div>;
+  if (initError) return <div className="h-screen bg-black text-white flex items-center justify-center">Reconectando...</div>;
+  if (!app) return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center font-bold animate-pulse">Cargando 4Life TV...</div>;
 
   const renderView = () => {
     switch (view) {
@@ -271,7 +258,7 @@ function Login({ onValidate, onLogin, onBack }) {
 }
 
 function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
-  const [tab, setTab] = useState('content'); // content | devices | settings
+  const [tab, setTab] = useState('content');
   const [scheduleMode, setScheduleMode] = useState('now');
   const [newUrl, setNewUrl] = useState('');
   const [newTitle, setNewTitle] = useState('');
@@ -280,36 +267,13 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   const [editingId, setEditingId] = useState(null);
   const [newPass, setNewPass] = useState('');
   
-  // DRAG AND DROP
   const [sortedPlaylist, setSortedPlaylist] = useState([]);
   const [dragItemIndex, setDragItemIndex] = useState(null); 
   
-  // DEVICES
-  const [devices, setDevices] = useState([]);
-  const [editingDevice, setEditingDevice] = useState(null); // ID del dispositivo que editamos
-  const [deviceLabel, setDeviceLabel] = useState('');
-
   const [notification, setNotification] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, actions: null });
   const playlistRef = collection(db, 'artifacts', appId, 'public', 'data', 'playlist');
   const showToast = (title, message, type = 'success') => setNotification({ title, message, type });
-
-  // Sync devices
-  useEffect(() => {
-      if(tab !== 'devices') return;
-      const devicesRef = collection(db, 'artifacts', appId, 'public', 'data', 'devices');
-      const unsub = onSnapshot(devicesRef, (snap) => {
-          const devs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          // Ordenar: Online primero, luego por nombre
-          setDevices(devs.sort((a,b) => {
-              const aOnline = (Date.now() - new Date(a.lastSeen).getTime()) < 40000;
-              const bOnline = (Date.now() - new Date(b.lastSeen).getTime()) < 40000;
-              if (aOnline === bOnline) return (a.label || a.id).localeCompare(b.label || b.id);
-              return aOnline ? -1 : 1;
-          }));
-      });
-      return () => unsub();
-  }, [tab]);
 
   useEffect(() => {
     if (dragItemIndex === null) setSortedPlaylist(playlist);
@@ -401,25 +365,10 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   const deleteSingleInstance = async (id) => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'playlist', id)); if(editingId === id) resetForm(); showToast("Instancia Eliminada", "Se ha borrado el video seleccionado."); } catch(e) { showToast("Error", "No se pudo eliminar el elemento.", "error"); } setConfirmDialog({ ...confirmDialog, isOpen: false }); };
   const deleteCampaign = async (item) => { try { const batch = writeBatch(db); const clones = playlist.filter(p => p.youtubeId === item.youtubeId); clones.forEach(clone => { const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id); batch.delete(docRef); }); await batch.commit(); if(editingId && clones.some(c => c.id === editingId)) resetForm(); showToast("Campaña Eliminada", `Se eliminaron ${clones.length} videos de la lista.`); } catch(e) { showToast("Error", "Error al borrar.", "error"); } setConfirmDialog({ ...confirmDialog, isOpen: false }); };
   const toggleVisibility = async (item) => { const batch = writeBatch(db); const clones = playlist.filter(p => p.youtubeId === item.youtubeId); const newStatus = !item.visible; clones.forEach(clone => { const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', clone.id); batch.update(docRef, { visible: newStatus }); }); await batch.commit(); };
+  
   const onDragStart = (e, index) => { setDragItemIndex(index); e.dataTransfer.effectAllowed = "move"; };
   const onDragEnter = (e, index) => { if (dragItemIndex === null || dragItemIndex === index) return; const newList = [...sortedPlaylist]; const item = newList[dragItemIndex]; newList.splice(dragItemIndex, 1); newList.splice(index, 0, item); setDragItemIndex(index); setSortedPlaylist(newList); };
   const onDragEnd = async () => { const finalIndex = dragItemIndex; setDragItemIndex(null); if (finalIndex === null) return; const batch = writeBatch(db); sortedPlaylist.forEach((item, idx) => { const ref = doc(db, 'artifacts', appId, 'public', 'data', 'playlist', item.id); batch.update(ref, { order: idx }); }); try { await batch.commit(); } catch(e) { showToast("Error", "Error orden.", "error"); setSortedPlaylist(playlist); } };
-
-  // --- DEVICE ACTIONS ---
-  const saveDeviceLabel = async (devId) => {
-      try {
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'devices', devId), { label: deviceLabel });
-          setEditingDevice(null);
-          showToast("Guardado", "Nombre del dispositivo actualizado.");
-      } catch(e) { showToast("Error", "No se pudo guardar.", "error"); }
-  };
-
-  const deleteDevice = async (devId) => {
-      try {
-          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'devices', devId));
-          showToast("Olvidado", "Dispositivo eliminado del registro.");
-      } catch(e) { showToast("Error", "No se pudo eliminar.", "error"); }
-  };
 
   return (
     <div className="flex flex-col h-full max-w-7xl mx-auto overflow-hidden">
@@ -429,11 +378,7 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
       <header className="shrink-0 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-900/60 p-4 m-4 md:mx-8 rounded-3xl border border-white/5 backdrop-blur-md shadow-2xl z-40">
         <div className="flex items-center gap-4"><div className="p-3 bg-indigo-500/20 rounded-xl"><List className="text-indigo-400 w-6 h-6" /></div><div><h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">Panel 4Life Colombia</h1><p className="text-slate-400 text-[10px] font-mono uppercase tracking-widest">Conexión: <span className="animate-pulse text-emerald-400 font-bold">Live</span></p></div></div>
         <div className="flex items-center gap-3">
-          <div className="flex bg-slate-800/50 p-1 rounded-xl border border-white/5">
-              <button onClick={() => setTab('content')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'content' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>CONTENIDO</button>
-              <button onClick={() => setTab('devices')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'devices' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>MONITORES</button>
-              <button onClick={() => setTab('settings')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'settings' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>SEGURIDAD</button>
-          </div>
+          <div className="flex bg-slate-800/50 p-1 rounded-xl border border-white/5"><button onClick={() => setTab('content')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'content' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>CONTENIDO</button><button onClick={() => setTab('settings')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${tab === 'settings' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>SEGURIDAD</button></div>
           <div className="w-px h-8 bg-white/10 mx-1 hidden md:block"></div>
           <button onClick={onGoToTV} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white shadow-lg transition-all active:scale-95"><MonitorPlay size={16} /> LIVE</button>
           <button onClick={onLogout} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl border border-white/5 transition-colors"><LogOut size={18} /></button>
@@ -441,91 +386,11 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
       </header>
 
       <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
-        {tab === 'devices' && (
-             <div className="h-full overflow-y-auto custom-scrollbar pb-20">
-                <div className="max-w-4xl mx-auto space-y-4">
-                    <div className="flex items-center justify-between mb-6">
-                        <div>
-                            <h2 className="text-2xl font-bold text-white flex items-center gap-2"><Activity className="text-indigo-400"/> Estado de Pantallas</h2>
-                            <p className="text-slate-400 text-sm">Monitoreo en tiempo real de los dispositivos conectados.</p>
-                        </div>
-                        <div className="bg-slate-900/50 px-4 py-2 rounded-xl border border-white/10 text-xs font-mono text-slate-400">
-                            Total: <span className="text-white font-bold">{devices.length}</span>
-                        </div>
-                    </div>
-
-                    {devices.length === 0 && (
-                        <div className="p-12 text-center bg-slate-900/40 rounded-3xl border border-dashed border-white/10">
-                            <WifiOff className="w-12 h-12 text-slate-700 mx-auto mb-4" />
-                            <p className="text-slate-500 text-sm mb-4">No se han detectado pantallas activas aún.</p>
-                            <button onClick={() => window.open('/live', '_blank')} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-sm shadow-lg flex items-center gap-2 mx-auto"><ExternalLink size={16}/> ABRIR SIMULADOR TV</button>
-                            <p className="text-slate-600 text-xs mt-4">Usa este botón para abrir una ventana "cliente" y ver cómo aparece aquí.</p>
-                        </div>
-                    )}
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {devices.map(dev => {
-                            const isOnline = (Date.now() - new Date(dev.lastSeen).getTime()) < 40000; // 40s umbral
-                            const isEditing = editingDevice === dev.id;
-
-                            return (
-                                <div key={dev.id} className={`p-4 rounded-2xl border transition-all ${isOnline ? 'bg-slate-900/80 border-emerald-500/30 shadow-lg shadow-emerald-900/5' : 'bg-slate-900/40 border-white/5 opacity-70'}`}>
-                                    <div className="flex justify-between items-start mb-3">
-                                        <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${isOnline ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/50 text-slate-500'}`}>
-                                            {isOnline ? <Wifi size={12}/> : <WifiOff size={12}/>}
-                                            {isOnline ? 'ONLINE' : 'OFFLINE'}
-                                        </div>
-                                        <button onClick={() => deleteDevice(dev.id)} className="text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={14}/></button>
-                                    </div>
-                                    
-                                    <div className="mb-4">
-                                        {isEditing ? (
-                                            <div className="flex gap-2">
-                                                <input 
-                                                    autoFocus
-                                                    className="w-full bg-slate-950 border border-indigo-500 rounded px-2 py-1 text-sm text-white outline-none"
-                                                    value={deviceLabel}
-                                                    onChange={e => setDeviceLabel(e.target.value)}
-                                                    placeholder="Nombre ej: Sala Juntas"
-                                                />
-                                                <button onClick={() => saveDeviceLabel(dev.id)} className="bg-indigo-600 text-white px-2 rounded hover:bg-indigo-500"><CheckCircle size={14}/></button>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-2 group">
-                                                <h3 className="font-bold text-white text-lg truncate" title={dev.id}>
-                                                    {dev.label || 'Pantalla Sin Nombre'}
-                                                </h3>
-                                                <button onClick={() => { setEditingDevice(dev.id); setDeviceLabel(dev.label || ''); }} className="text-slate-600 group-hover:text-indigo-400 transition-colors"><Edit3 size={14}/></button>
-                                            </div>
-                                        )}
-                                        <p className="text-[10px] font-mono text-slate-500 mt-1 truncate">ID: {dev.id}</p>
-                                    </div>
-
-                                    <div className="space-y-2 pt-3 border-t border-white/5">
-                                        <div className="flex items-center gap-2 text-xs text-slate-400">
-                                            <Film size={12} className="text-indigo-400"/>
-                                            <span className="truncate flex-1" title={dev.currentVideo}>{dev.currentVideo || 'Sin actividad'}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                                            <Clock size={10}/>
-                                            <span>Visto: {new Date(dev.lastSeen).toLocaleTimeString()}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-             </div>
-        )}
-
-        {tab === 'settings' && (
+        {tab === 'settings' ? (
           <div className="h-full overflow-y-auto custom-scrollbar">
             <div className="max-w-md mx-auto bg-slate-900/80 rounded-3xl p-8 border border-white/10 shadow-2xl backdrop-blur-xl mt-8"><h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Shield className="text-indigo-400"/> Seguridad</h3><p className="text-slate-400 text-sm mb-6">Cambia la contraseña de acceso al panel.</p><form onSubmit={handleChangePass} className="space-y-4"><div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Nueva Clave</label><div className="relative"><Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} /><input type="text" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="Ej: admin2026" className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm focus:border-indigo-500 outline-none transition-colors" /></div></div><button disabled={!newPass} type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 rounded-xl font-bold shadow-lg shadow-emerald-900/10 transition-all">ACTUALIZAR CLAVE</button></form></div>
           </div>
-        )}
-
-        {tab === 'content' && (
+        ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full">
             <div className="lg:col-span-1 h-full overflow-y-auto pr-2 custom-scrollbar">
               <div className={`bg-slate-900/80 rounded-3xl p-6 border transition-all shadow-2xl space-y-5 backdrop-blur-xl mb-4 ${editingId ? 'border-indigo-500 ring-1 ring-indigo-500/50' : 'border-white/10'}`}>
@@ -609,38 +474,19 @@ function TVMode({ playlist, onExit }) {
   const [showUI, setShowUI] = useState(false); 
   const [errorMsg, setErrorMsg] = useState(null);
   const [isMuted, setIsMuted] = useState(true);
-  const [myDeviceId] = useState(getDeviceId());
+  
   const playerRef = useRef(null);
   const uiTimerRef = useRef(null);
-  
-  const activePlaylist = playlist.filter(v => {
+  const callbacksRef = useRef({});
+
+  // Filtrar y memorizar la playlist activa
+  const activePlaylist = useMemo(() => playlist.filter(v => {
     if (!v.visible) return false;
     const now = getTodayString();
     return (!v.startDate || v.startDate <= now) && (!v.endDate || v.expiresAt || v.endDate >= now);
-  });
+  }), [playlist]);
+
   const currentVideo = activePlaylist[currentIdx];
-
-  // HEARTBEAT SYSTEM
-  useEffect(() => {
-    const heartbeat = setInterval(async () => {
-        try {
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'devices', myDeviceId), {
-                lastSeen: new Date().toISOString(),
-                currentVideo: currentVideo?.title || 'Esperando...',
-            }, { merge: true });
-        } catch(e) { console.warn("Heartbeat failed", e); }
-    }, 15000);
-    
-    // Disparar uno inmediato al montar
-    try {
-        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'devices', myDeviceId), {
-            lastSeen: new Date().toISOString(),
-            currentVideo: currentVideo?.title || 'Iniciando...',
-        }, { merge: true });
-    } catch(e) {}
-
-    return () => clearInterval(heartbeat);
-  }, [currentVideo, myDeviceId]);
 
   const resetUITimer = useCallback(() => {
     setShowUI(true);
@@ -649,30 +495,58 @@ function TVMode({ playlist, onExit }) {
   }, []);
 
   const handleNext = useCallback(() => {
-    if (activePlaylist.length <= 1) {
-        if (playerRef.current?.seekTo) { playerRef.current.seekTo(0); playerRef.current.playVideo(); }
-        return;
-    }
-    setCurrentIdx(prev => (prev + 1 >= activePlaylist.length ? 0 : prev + 1));
+    if (activePlaylist.length === 0) return;
+    setCurrentIdx(prev => (prev + 1) % activePlaylist.length);
   }, [activePlaylist.length]);
 
+  // Actualizar refs de callbacks para que el listener de YT siempre tenga la última versión
+  useEffect(() => {
+    callbacksRef.current.onEnded = handleNext;
+    callbacksRef.current.onError = () => {
+        setErrorMsg("Señal inestable. Saltando...");
+        setTimeout(handleNext, 2000);
+    };
+  }, [handleNext]);
+
+  // Resetear índice si cambia la lista y nos quedamos fuera
+  useEffect(() => {
+    if (currentIdx >= activePlaylist.length && activePlaylist.length > 0) {
+      setCurrentIdx(0);
+    }
+  }, [activePlaylist.length, currentIdx]);
+
+  // Watchdog: Forzar play si se pausa
   useEffect(() => {
       const interval = setInterval(() => {
-          if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+          if (playerRef.current?.getPlayerState) {
               const state = playerRef.current.getPlayerState();
               if (state === 2 || state === 5) {
+                  console.log("Watchdog: Auto-resume");
                   playerRef.current.playVideo();
               }
           }
-      }, 2000);
+      }, 3000);
       return () => clearInterval(interval);
   }, []);
 
+  // Inicialización ÚNICA del Player
   useEffect(() => {
     if (!currentVideo) return;
     setErrorMsg(null);
+
+    // Si ya existe el player, solo cargamos el video
+    if (playerRef.current) {
+        if (playerRef.current.loadVideoById) {
+            playerRef.current.loadVideoById({
+                videoId: currentVideo.youtubeId,
+                suggestedQuality: 'hd1080'
+            });
+        }
+        return;
+    }
+
+    // Inicializar Player por primera vez
     const initYT = () => {
-        if (playerRef.current) { try { playerRef.current.destroy(); } catch(e){} }
         playerRef.current = new window.YT.Player('yt-player', {
             height: '100%', width: '100%', videoId: currentVideo.youtubeId,
             playerVars: { 
@@ -680,20 +554,36 @@ function TVMode({ playlist, onExit }) {
                 'vq': 'hd1080', 'origin': window.location.origin, 'playsinline': 1 
             },
             events: {
-                'onReady': (e) => { e.target.playVideo(); setTimeout(() => { try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} }, 800); },
-                'onStateChange': (e) => { 
-                    if (e.data === window.YT.PlayerState.PLAYING) { setIsPlaying(true); try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} } 
-                    if (e.data === window.YT.PlayerState.ENDED) handleNext();
-                    if (e.data === window.YT.PlayerState.PAUSED) e.target.playVideo();
+                'onReady': (e) => { 
+                    e.target.playVideo(); 
+                    setTimeout(() => { try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} }, 1000); 
                 },
-                'onError': () => { setErrorMsg("Señal perdida. Saltando..."); setTimeout(handleNext, 3000); }
+                'onStateChange': (e) => { 
+                    if (e.data === window.YT.PlayerState.PLAYING) { 
+                        setIsPlaying(true); 
+                        try { if(e.target.isMuted()) { e.target.unMute(); setIsMuted(false); } } catch(err) {} 
+                    } 
+                    if (e.data === window.YT.PlayerState.ENDED) {
+                        callbacksRef.current.onEnded?.();
+                    }
+                    if (e.data === window.YT.PlayerState.PAUSED) {
+                        e.target.playVideo(); // Auto-resume inmediato
+                    }
+                },
+                'onError': () => callbacksRef.current.onError?.()
             }
         });
     };
+
     if (!window.YT) {
         const tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api";
         document.body.appendChild(tag); window.onYouTubeIframeAPIReady = initYT;
     } else { initYT(); }
+
+  }, [currentVideo]); // Solo depende de currentVideo para cargar, no recrea player si existe
+
+  // Listeners de UI
+  useEffect(() => {
     window.addEventListener('mousemove', resetUITimer);
     window.addEventListener('touchstart', resetUITimer);
     return () => { 
@@ -701,7 +591,8 @@ function TVMode({ playlist, onExit }) {
         window.removeEventListener('touchstart', resetUITimer);
         if (uiTimerRef.current) clearTimeout(uiTimerRef.current); 
     };
-  }, [currentVideo, resetUITimer, handleNext]);
+  }, [resetUITimer]);
+
 
   if (!currentVideo) return <div className="h-screen bg-black flex flex-col items-center justify-center text-white"><Tv size={64} className="text-slate-800 animate-pulse mb-4" /><p className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-40">Sin Señal Programada</p><button onClick={onExit} className="mt-8 px-6 py-2 bg-white/5 border border-white/10 rounded-full text-[10px] font-bold hover:bg-white/10 transition-all uppercase tracking-widest">Salir</button></div>;
 
@@ -715,13 +606,7 @@ function TVMode({ playlist, onExit }) {
             <h2 className="text-3xl font-black text-white drop-shadow-2xl tracking-tighter uppercase italic opacity-90">{currentVideo.title}</h2>
             <div className="flex items-center gap-3"><div className="bg-red-600 px-2 py-0.5 rounded text-[8px] font-black text-white tracking-widest uppercase">YouTube</div><p className="text-white/40 font-mono text-[10px] flex items-center gap-2"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> SINTONIZADO • {activePlaylist.indexOf(currentVideo) + 1}/{activePlaylist.length}</p></div>
           </div>
-          <div className="flex items-start gap-4">
-             {/* ID de dispositivo visible solo en UI para ayudar al admin a identificar la pantalla */}
-             <div className="bg-black/40 backdrop-blur px-3 py-1.5 rounded-lg border border-white/10 text-[10px] text-white/50 font-mono pointer-events-auto">
-                 ID: <span className="text-white select-all">{myDeviceId}</span>
-             </div>
-             <button onClick={onExit} className="pointer-events-auto p-3 bg-white/5 hover:bg-red-600/40 backdrop-blur-md rounded-2xl text-white/40 hover:text-white transition-all border border-white/5 hover:scale-110 active:scale-90 shadow-xl"><LogOut size={20} /></button>
-          </div>
+          <button onClick={onExit} className="pointer-events-auto p-3 bg-white/5 hover:bg-red-600/40 backdrop-blur-md rounded-2xl text-white/40 hover:text-white transition-all border border-white/5 hover:scale-110 active:scale-90 shadow-xl"><LogOut size={20} /></button>
         </div>
       </div>
       {errorMsg && <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-xl"><AlertTriangle className="w-16 h-16 text-yellow-600 mb-4 animate-pulse" /><p className="text-2xl font-black uppercase italic text-white/80">{errorMsg}</p></div>}
