@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube, GripVertical, Copy, Info, Layers, Activity, Edit3, Wifi, WifiOff, ExternalLink, RefreshCw, Monitor, Star } from 'lucide-react';
+import { Play, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tv, Settings, LogOut, MonitorPlay, Lock, AlertTriangle, Film, List, Calendar, VolumeX, Clock, CheckCircle, Shield, Key, Pencil, X, Youtube, GripVertical, Copy, Info, Layers, Activity, Edit3, Wifi, WifiOff, ExternalLink, RefreshCw, Monitor, Star, Search } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, writeBatch, getDocs } from 'firebase/firestore';
@@ -41,6 +41,7 @@ try {
 }
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'tvincentivos-prod';
+
 
 // --- Utilerías ---
 const getYouTubeId = (url) => {
@@ -344,6 +345,7 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
   
   const [sortedPlaylist, setSortedPlaylist] = useState([]);
   const [dragItemIndex, setDragItemIndex] = useState(null); 
+  const [searchTerm, setSearchTerm] = useState(''); // Estado para el buscador
   
   const [devices, setDevices] = useState([]);
   const [editingDevice, setEditingDevice] = useState(null);
@@ -720,8 +722,27 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
                       <span className="text-[8px] text-slate-600 italic hidden sm:block">TIP: Arrastra para reordenar</span>
                   </div>
               </div>
+              
+              {/* --- BUSCADOR INTELIGENTE --- */}
+              <div className="mb-4 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                  <input 
+                      type="text" 
+                      placeholder="Buscar video por título o ID de YouTube..." 
+                      value={searchTerm} 
+                      onChange={(e) => setSearchTerm(e.target.value)} 
+                      className="w-full bg-slate-900/60 border border-white/10 rounded-xl pl-10 pr-10 py-3 text-sm focus:border-indigo-500 outline-none text-white transition-colors"
+                  />
+                  {searchTerm && (
+                      <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white p-1 transition-colors">
+                          <X size={16} />
+                      </button>
+                  )}
+              </div>
+
               <div className="space-y-4 mt-4">
-                {sortedPlaylist.map((item, index) => {
+                {sortedPlaylist.filter(item => item.title.toLowerCase().includes(searchTerm.toLowerCase()) || item.youtubeId.includes(searchTerm)).map((item, mappedIndex) => {
+                  const index = sortedPlaylist.findIndex(p => p.id === item.id); // Extraemos el índice real para el ordenamiento
                   const isEditing = editingId === item.id;
                   const now = getTodayString();
                   const isScheduled = item.startDate && item.startDate > now;
@@ -734,20 +755,20 @@ function AdminPanel({ playlist, onUpdatePassword, onLogout, onGoToTV }) {
                   return (
                     <div 
                       key={item.id} 
-                      draggable
-                      onDragStart={(e) => onDragStart(e, index)}
-                      onDragEnter={(e) => onDragEnter(e, index)}
+                      draggable={!searchTerm} // Deshabilita arrastrar si hay una búsqueda activa
+                      onDragStart={(e) => { if (!searchTerm) onDragStart(e, index) }}
+                      onDragEnter={(e) => { if (!searchTerm) onDragEnter(e, index) }}
                       onDragEnd={onDragEnd}
                       onDragOver={(e) => e.preventDefault()}
                       className={`relative transition-all duration-300 ease-out`}
                     >
-                        {isDraggingThis ? (
+                        {isDraggingThis && !searchTerm ? (
                           <div className="h-24 border-2 border-dashed border-indigo-500/50 rounded-xl bg-indigo-500/10 flex items-center justify-center animate-pulse">
                               <span className="text-indigo-400 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2"><ArrowDown size={14}/> SOLTAR AQUÍ <ArrowUp size={14}/></span>
                           </div>
                         ) : (
-                          <div className={`flex items-center gap-3 p-3 bg-slate-900/60 rounded-2xl border transition-all cursor-move group ${isEditing ? 'border-indigo-500 bg-indigo-500/10' : item.isPromo ? 'border-yellow-500/30 hover:border-yellow-500/60 bg-yellow-500/5' : 'border-white/5 opacity-90 hover:opacity-100 hover:border-white/10'}`}>
-                              <div className="text-slate-600 group-hover:text-slate-400 transition-colors cursor-grab active:cursor-grabbing"><GripVertical size={20} /></div>
+                          <div className={`flex items-center gap-3 p-3 bg-slate-900/60 rounded-2xl border transition-all ${!searchTerm ? 'cursor-move' : ''} group ${isEditing ? 'border-indigo-500 bg-indigo-500/10' : item.isPromo ? 'border-yellow-500/30 hover:border-yellow-500/60 bg-yellow-500/5' : 'border-white/5 opacity-90 hover:opacity-100 hover:border-white/10'}`}>
+                              {!searchTerm && <div className="text-slate-600 group-hover:text-slate-400 transition-colors cursor-grab active:cursor-grabbing"><GripVertical size={20} /></div>}
                               <div className="w-20 md:w-28 aspect-video bg-black rounded-xl overflow-hidden flex-shrink-0 relative">
                                   <img src={`https://img.youtube.com/vi/${item.youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover opacity-80" alt="miniatura" />
                                   {isExpired && <div className="absolute inset-0 bg-red-950/80 flex items-center justify-center"><span className="text-[8px] font-bold text-white bg-red-600 px-2 py-0.5 rounded uppercase">Fin</span></div>}
