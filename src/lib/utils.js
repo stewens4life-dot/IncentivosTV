@@ -42,17 +42,31 @@ export const getDeviceInfo = () => {
 };
 
 export const getDeviceLocation = async () => {
-  try {
-    const res = await fetch('https://get.geojs.io/v1/ip/geo.json');
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.city && data.region) {
-      return `${data.city}, ${data.region}`;
+  // Las TVs (Tizen/WebOS) pueden tener bloqueos CORS o fallar con algunas APIs.
+  // Usaremos un sistema de intentos múltiples (fallbacks) con las APIs más compatibles.
+  const apis = [
+    'https://ipwho.is/',
+    'https://ipapi.co/json/',
+    'https://get.geojs.io/v1/ip/geo.json'
+  ];
+
+  for (const api of apis) {
+    try {
+      const res = await fetch(api, { cache: 'no-store', mode: 'cors' });
+      if (!res.ok) continue;
+      const data = await res.json();
+      
+      // Extraemos la ciudad y región dependiendo del formato de la API
+      const city = data.city;
+      const region = data.region || data.region_name || data.regionName;
+      
+      if (city && region) return `${city}, ${region}`;
+      if (data.country || data.country_name) return data.country || data.country_name;
+    } catch {
+      // Si falla, silenciosamente intentará con la siguiente API del array
     }
-    return data.country || 'Ubicación desconocida';
-  } catch {
-    return 'Ubicación desconocida';
   }
+  return 'Sede Corporativa'; // Fallback final genérico si todas fallan
 };
 
 export const formatTime = (date = new Date()) => {

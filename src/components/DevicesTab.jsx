@@ -169,16 +169,16 @@ export default function DevicesTab() {
                   )}
                 </div>
 
-                {/* Comandos - Estilo iOS Control Center */}
-                <div className="grid grid-cols-3 gap-2 relative z-10">
-                  <button onClick={() => sendCommand(dev.id, 'FORCE_PLAY', 'Forzar Play')} className="aspect-square liquid-button hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:text-emerald-400 rounded-xl flex flex-col items-center justify-center gap-1.5 text-white/60 transition-all active:scale-95 group/btn" title="Forzar Play">
-                    <Play size={18} className="group-hover/btn:scale-110 transition-transform" />
+                {/* Comandos - Estilo Compacto */}
+                <div className="flex gap-2 relative z-10 pt-2 mt-1 border-t border-white/5">
+                  <button onClick={() => sendCommand(dev.id, 'FORCE_PLAY', 'Forzar Play')} className="flex-1 py-2.5 liquid-button hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:text-emerald-400 rounded-lg flex items-center justify-center gap-1.5 text-[10px] font-bold text-white/60 transition-all active:scale-95 group/btn" title="Forzar Play">
+                    <Play size={14} className="group-hover/btn:scale-110 transition-transform" /> <span className="hidden xl:inline">Play</span>
                   </button>
-                  <button onClick={() => sendCommand(dev.id, 'NEXT', 'Siguiente Video')} className="aspect-square liquid-button hover:bg-indigo-500/20 hover:border-indigo-500/30 hover:text-indigo-400 rounded-xl flex flex-col items-center justify-center gap-1.5 text-white/60 transition-all active:scale-95 group/btn" title="Siguiente">
-                    <SkipForward size={18} className="group-hover/btn:scale-110 transition-transform" />
+                  <button onClick={() => sendCommand(dev.id, 'NEXT', 'Siguiente Video')} className="flex-1 py-2.5 liquid-button hover:bg-indigo-500/20 hover:border-indigo-500/30 hover:text-indigo-400 rounded-lg flex items-center justify-center gap-1.5 text-[10px] font-bold text-white/60 transition-all active:scale-95 group/btn" title="Siguiente">
+                    <SkipForward size={14} className="group-hover/btn:scale-110 transition-transform" /> <span className="hidden xl:inline">Next</span>
                   </button>
-                  <button onClick={() => sendCommand(dev.id, 'REFRESH', 'Recargar')} className="aspect-square liquid-button hover:bg-white/20 hover:border-white/30 hover:text-white rounded-xl flex flex-col items-center justify-center gap-1.5 text-white/60 transition-all active:scale-95 group/btn" title="Recargar">
-                    <RefreshCw size={18} className="group-hover/btn:scale-110 transition-transform" />
+                  <button onClick={() => sendCommand(dev.id, 'REFRESH', 'Recargar')} className="flex-1 py-2.5 liquid-button hover:bg-white/20 hover:border-white/30 hover:text-white rounded-lg flex items-center justify-center gap-1.5 text-[10px] font-bold text-white/60 transition-all active:scale-95 group/btn" title="Recargar">
+                    <RefreshCw size={14} className="group-hover/btn:scale-110 transition-transform" /> <span className="hidden xl:inline">Reload</span>
                   </button>
                 </div>
               </div>
